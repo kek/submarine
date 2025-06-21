@@ -1,4 +1,6 @@
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
+use bevy::input::mouse::MouseMotion;
 use bevy_rapier3d::prelude::*;
 
 // Components
@@ -36,6 +38,13 @@ struct GameState {
     oxygen: f32,
 }
 
+#[derive(Resource)]
+struct CameraState {
+    distance: f32,
+    yaw: f32,
+    pitch: f32,
+}
+
 impl Default for GameState {
     fn default() -> Self {
         Self {
@@ -46,16 +55,28 @@ impl Default for GameState {
     }
 }
 
+impl Default for CameraState {
+    fn default() -> Self {
+        Self {
+            distance: 15.0,
+            yaw: 0.0,
+            pitch: 0.0,
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .init_resource::<GameState>()
+        .init_resource::<CameraState>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
             submarine_movement,
             camera_follow,
+            mouse_camera_control,
             fish_movement,
             oxygen_system,
             collect_fish,
@@ -68,11 +89,17 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut window_query: Query<&mut Window, With<PrimaryWindow>>,
 ) {
+    // Hide mouse cursor
+    if let Ok(mut window) = window_query.get_single_mut() {
+        window.cursor.visible = false;
+    }
+
     // Camera
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_xyz(0.0, 5.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
+            transform: Transform::from_xyz(0.0, 5.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..default()
         },
         CameraFollow,
@@ -271,13 +298,35 @@ fn submarine_movement(
 fn camera_follow(
     submarine_query: Query<&Transform, With<Submarine>>,
     mut camera_query: Query<&mut Transform, (With<CameraFollow>, Without<Submarine>)>,
+    camera_state: Res<CameraState>,
 ) {
     if let Ok(submarine_transform) = submarine_query.get_single() {
         if let Ok(mut camera_transform) = camera_query.get_single_mut() {
-            let target_position = submarine_transform.translation + Vec3::new(0.0, 5.0, 10.0);
+            // Calculate camera position based on yaw and pitch
+            // When yaw=0, pitch=0: camera should be behind submarine (positive Z)
+            let x = camera_state.distance * camera_state.yaw.sin();
+            let y = camera_state.distance * camera_state.pitch.sin() + 5.0;
+            let z = camera_state.distance * camera_state.yaw.cos() * camera_state.pitch.cos();
+            
+            let target_position = submarine_transform.translation + Vec3::new(x, y, z);
             camera_transform.translation = camera_transform.translation.lerp(target_position, 0.1);
             camera_transform.look_at(submarine_transform.translation, Vec3::Y);
         }
+    }
+}
+
+fn mouse_camera_control(
+    mut camera_state: ResMut<CameraState>,
+    mut mouse_motion_events: EventReader<MouseMotion>,
+) {
+    let sensitivity = 0.005;
+
+    for event in mouse_motion_events.read() {
+        camera_state.yaw -= event.delta.x * sensitivity;
+        camera_state.pitch += event.delta.y * sensitivity;
+        
+        // Clamp pitch to prevent camera flipping
+        camera_state.pitch = camera_state.pitch.clamp(-1.0, 1.0);
     }
 }
 
