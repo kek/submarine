@@ -352,29 +352,37 @@ fn setup(
         ..default()
     });
 
-    // Spawn just one fish for debugging
-    commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::UVSphere {
-                radius: 0.5,
-                sectors: 16,
-                stacks: 8,
-            })),
-            material: materials.add(Color::rgb(0.8, 0.8, 0.2).into()),
-            transform: Transform::from_xyz(0.0, -3.0, -10.0), // Directly in front of submarine
-            ..default()
-        },
-        Fish,
-        RigidBody::Dynamic,
-        Collider::ball(0.5),
-        GravityScale(0.0),
-        FishMovement {
-            direction: Vec3::new(0.0, 0.0, 0.0), // No movement for debugging
-            speed: 0.0,
-            change_direction_timer: 0.0,
-            change_direction_interval: 1.0,
-        },
-    ));
+    // Spawn 20 fish
+    for i in 0..20 {
+        let angle = (i as f32) * 2.0 * std::f32::consts::PI / 20.0;
+        let distance = 10.0 + (i as f32) * 2.0; // Vary distance from 10 to 48
+        let x = angle.cos() * distance;
+        let z = angle.sin() * distance;
+        let y = -5.0 - (i as f32) * 0.5; // Vary depth
+        
+        commands.spawn((
+            PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::UVSphere {
+                    radius: 0.5,
+                    sectors: 16,
+                    stacks: 8,
+                })),
+                material: materials.add(Color::rgb(0.8, 0.8, 0.2).into()),
+                transform: Transform::from_xyz(x, y, z),
+                ..default()
+            },
+            Fish,
+            RigidBody::Dynamic,
+            Collider::ball(0.5),
+            GravityScale(0.0),
+            FishMovement {
+                direction: Vec3::new(0.0, 0.0, 0.0), // No movement for debugging
+                speed: 0.0,
+                change_direction_timer: 0.0,
+                change_direction_interval: 1.0,
+            },
+        ));
+    }
 
     // UI
     commands
@@ -791,7 +799,7 @@ fn ui_system(
                 let rel = fish_transform.translation - submarine_transform.translation;
                 // Transform to submarine's local coordinate system
                 let local_rel = submarine_transform.rotation.inverse() * rel;
-                let fish_angle = (local_rel.x.atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2 + 2.0 * std::f32::consts::PI) 
+                let fish_angle = ((-local_rel.x).atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2 + 2.0 * std::f32::consts::PI) 
                     % (2.0 * std::f32::consts::PI);
                 fish_angle.to_degrees()
             } else {
@@ -877,7 +885,8 @@ fn sonar_detection_system(
             // Calculate angle relative to submarine's forward direction
             // Forward is negative Z in submarine's local space
             // Add 90 degrees (π/2) to make forward point to the top of the sonar
-            let fish_angle = (local_rel.x.atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2 + 2.0 * std::f32::consts::PI) 
+            // Negate local_rel.x to fix left/right inversion
+            let fish_angle = ((-local_rel.x).atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2 + 2.0 * std::f32::consts::PI) 
                 % (2.0 * std::f32::consts::PI);
             
             let sonar_center_x = 100.0;
