@@ -352,42 +352,29 @@ fn setup(
         ..default()
     });
 
-    // Spawn fish at different positions around the submarine
-    for i in 0..20 {
-        let angle = (i as f32 / 20.0) * 2.0 * std::f32::consts::PI;
-        let distance = 5.0 + (i % 4) as f32 * 4.0; // More varied distances: 5, 9, 13, 17 units
-        let x = angle.cos() * distance;
-        let z = angle.sin() * distance;
-        let y = -3.0 - (i % 3) as f32 * 3.0; // More varied depths: -3, -6, -9 units
-
-        commands.spawn((
-            PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::UVSphere {
-                    radius: 0.5,
-                    sectors: 16,
-                    stacks: 8,
-                })),
-                material: materials.add(Color::rgb(0.8, 0.8, 0.2).into()),
-                transform: Transform::from_xyz(x, y, z),
-                ..default()
-            },
-            Fish,
-            RigidBody::Dynamic,
-            Collider::ball(0.5),
-            GravityScale(0.0),
-            FishMovement {
-                direction: Vec3::new(
-                    (i as f32 * 0.5).sin(),
-                    (i as f32 * 0.3).cos(),
-                    (i as f32 * 0.7).sin(),
-                )
-                .normalize(),
-                speed: 1.0 + (i % 3) as f32 * 0.5, // Varying speeds
-                change_direction_timer: 0.0,
-                change_direction_interval: 2.0 + (i % 4) as f32 * 1.0, // Varying intervals
-            },
-        ));
-    }
+    // Spawn just one fish for debugging
+    commands.spawn((
+        PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::UVSphere {
+                radius: 0.5,
+                sectors: 16,
+                stacks: 8,
+            })),
+            material: materials.add(Color::rgb(0.8, 0.8, 0.2).into()),
+            transform: Transform::from_xyz(0.0, -3.0, -10.0), // Directly in front of submarine
+            ..default()
+        },
+        Fish,
+        RigidBody::Dynamic,
+        Collider::ball(0.5),
+        GravityScale(0.0),
+        FishMovement {
+            direction: Vec3::new(0.0, 0.0, 0.0), // No movement for debugging
+            speed: 0.0,
+            change_direction_timer: 0.0,
+            change_direction_interval: 1.0,
+        },
+    ));
 
     // UI
     commands
@@ -780,6 +767,8 @@ fn collect_fish(
 fn ui_system(
     game_state: Res<GameState>,
     submarine_query: Query<(&Transform, &Velocity), With<Submarine>>,
+    fish_query: Query<&Transform, With<Fish>>,
+    sonar_state: Res<SonarState>,
     mut ui_query: Query<&mut Text>,
 ) {
     if let Ok(mut text) = ui_query.get_single_mut() {
@@ -793,8 +782,27 @@ fn ui_system(
                 (0.0, 0.0, (0.0, 0.0, 0.0))
             };
 
+        let submarine_yaw = orientation.0.to_degrees();
+        let sweep_angle = sonar_state.sweep_angle.to_degrees();
+
+        // Calculate fish angle for debugging
+        let fish_angle_deg = if let Ok((submarine_transform, _velocity)) = submarine_query.get_single() {
+            if let Ok(fish_transform) = fish_query.get_single() {
+                let rel = fish_transform.translation - submarine_transform.translation;
+                // Transform to submarine's local coordinate system
+                let local_rel = submarine_transform.rotation.inverse() * rel;
+                let fish_angle = (local_rel.x.atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2 + 2.0 * std::f32::consts::PI) 
+                    % (2.0 * std::f32::consts::PI);
+                fish_angle.to_degrees()
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
             game_state.oxygen,
@@ -802,7 +810,10 @@ fn ui_system(
             depth,
             orientation.1.to_degrees(),
             orientation.0.to_degrees(),
-            orientation.2.to_degrees()
+            orientation.2.to_degrees(),
+            submarine_yaw,
+            sweep_angle,
+            fish_angle_deg
         );
     }
 }
@@ -813,6 +824,7 @@ fn sonar_sweep_system(mut sonar_state: ResMut<SonarState>, time: Res<Time>) {
 
 fn sonar_sweep_update_system(
     sonar_state: Res<SonarState>,
+    submarine_query: Query<&Transform, With<Submarine>>,
     mut sweep_line_query: Query<&mut Style, With<SonarSweepLine>>,
 ) {
     let center_x = 100.0;
@@ -820,11 +832,20 @@ fn sonar_sweep_update_system(
     let radius = 75.0;
     let num_segments = 20;
 
-    // Position each segment along the sweep angle (counter-clockwise)
+    // Get submarine's yaw rotation to make sweep relative to submarine orientation
+    let submarine_yaw = if let Ok(submarine_transform) = submarine_query.get_single() {
+        submarine_transform.rotation.to_euler(EulerRot::YXZ).0
+    } else {
+        0.0
+    };
+
+    // Position each segment along the sweep angle (clockwise)
+    // Make sweep angle relative to submarine's orientation
     for (index, mut style) in sweep_line_query.iter_mut().enumerate() {
         let segment_distance = (index as f32 + 1.0) * (radius / num_segments as f32);
-        let segment_x = center_x + segment_distance * (-sonar_state.sweep_angle).cos();
-        let segment_y = center_y + segment_distance * (-sonar_state.sweep_angle).sin();
+        let sweep_angle = sonar_state.sweep_angle + submarine_yaw;
+        let segment_x = center_x + segment_distance * sweep_angle.cos();
+        let segment_y = center_y - segment_distance * sweep_angle.sin(); // Negative to flip Y axis
 
         style.left = Val::Px(segment_x - 1.0);
         style.top = Val::Px(segment_y - 1.0);
@@ -836,109 +857,58 @@ fn sonar_sweep_update_system(
 fn sonar_detection_system(
     submarine_query: Query<&Transform, With<Submarine>>,
     fish_query: Query<(Entity, &Transform), With<Fish>>,
-    sonar_state: Res<SonarState>,
     mut sonar_detections: ResMut<SonarDetections>,
-    mut fish_detection_times: ResMut<FishDetectionTimes>,
 ) {
     if let Ok(submarine_transform) = submarine_query.get_single() {
         let mut fish_positions = Vec::new();
         let sonar_range = 20.0;
-        let fade_angle = std::f32::consts::PI; // 180 degrees
-        let detect_window = 0.2; // ~11.5 degrees
 
-        // The sweep line is drawn at -sweep_angle, so use that for detection
-        let sweep_angle = ((-sonar_state.sweep_angle) % (2.0 * std::f32::consts::PI)
-            + 2.0 * std::f32::consts::PI)
-            % (2.0 * std::f32::consts::PI);
-
-        // Detect sweep wrap (reset detections)
-        let prev_angle = fish_detection_times.last_angle.unwrap_or(sweep_angle);
-        let crossed_zero = prev_angle > 5.0 && sweep_angle < 1.0;
-        if crossed_zero {
-            fish_detection_times.detections.clear();
-            fish_detection_times.detected_fish_entities.clear();
-        }
-        fish_detection_times.last_angle = Some(sweep_angle);
-
-        // Detect fish
-        for (entity, fish_transform) in fish_query.iter() {
+        // Detect all fish within range
+        for (_entity, fish_transform) in fish_query.iter() {
             let rel = fish_transform.translation - submarine_transform.translation;
             let dist = rel.length();
             if dist > sonar_range {
                 continue;
             }
-            let fish_angle =
-                (rel.z.atan2(rel.x) + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI);
-            let horiz_dist = (rel.x * rel.x + rel.z * rel.z).sqrt();
-            let vert_angle = rel.y.atan2(horiz_dist);
-            let angle_diff = ((fish_angle - sweep_angle + 2.0 * std::f32::consts::PI)
-                % (2.0 * std::f32::consts::PI))
-                .min(
-                    (sweep_angle - fish_angle + 2.0 * std::f32::consts::PI)
-                        % (2.0 * std::f32::consts::PI),
-                );
-            if angle_diff < detect_window && vert_angle.abs() < 0.5 {
-                if !fish_detection_times
-                    .detected_fish_entities
-                    .contains(&entity)
-                {
-                    let sonar_center_x = 100.0;
-                    let sonar_center_y = 100.0;
-                    let sonar_radius = 75.0;
-                    let scaled_dist = (dist / sonar_range) * sonar_radius;
-                    let blip_x = sonar_center_x + scaled_dist * fish_angle.cos();
-                    let blip_y = sonar_center_y + scaled_dist * fish_angle.sin();
-                    fish_detection_times
-                        .detections
-                        .push((blip_x, blip_y, sweep_angle));
-                    fish_detection_times.detected_fish_entities.insert(entity);
-                }
-            }
-        }
-
-        // Fade out blips
-        fish_positions.clear();
-        fish_detection_times.detections.retain(|(x, y, det_angle)| {
-            let since = (sweep_angle - *det_angle + 2.0 * std::f32::consts::PI)
+            
+            // Transform to submarine's local coordinate system
+            let local_rel = submarine_transform.rotation.inverse() * rel;
+            
+            // Calculate angle relative to submarine's forward direction
+            // Forward is negative Z in submarine's local space
+            // Add 90 degrees (π/2) to make forward point to the top of the sonar
+            let fish_angle = (local_rel.x.atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2 + 2.0 * std::f32::consts::PI) 
                 % (2.0 * std::f32::consts::PI);
-            if since < fade_angle {
-                fish_positions.push((*x, *y));
-                true
-            } else {
-                false
-            }
-        });
+            
+            let sonar_center_x = 100.0;
+            let sonar_center_y = 100.0;
+            let sonar_radius = 75.0;
+            let scaled_dist = (dist / sonar_range) * sonar_radius;
+            
+            // Convert to sonar display coordinates
+            // Forward (negative Z) should be at the top of the sonar
+            let blip_x = sonar_center_x + scaled_dist * fish_angle.cos();
+            let blip_y = sonar_center_y - scaled_dist * fish_angle.sin(); // Negative to flip Y axis
+            
+            fish_positions.push((blip_x, blip_y));
+        }
+        
         sonar_detections.fish_positions = fish_positions;
     }
 }
 
 fn sonar_blip_system(
     sonar_detections: Res<SonarDetections>,
-    fish_detection_times: Res<FishDetectionTimes>,
-    sonar_state: Res<SonarState>,
     mut blip_query: Query<(&mut Style, &mut BackgroundColor), With<SonarBlip>>,
 ) {
-    let fade_angle = std::f32::consts::PI;
-    let sweep_angle = ((-sonar_state.sweep_angle) % (2.0 * std::f32::consts::PI)
-        + 2.0 * std::f32::consts::PI)
-        % (2.0 * std::f32::consts::PI);
-
     for (i, (mut style, mut color)) in blip_query.iter_mut().enumerate() {
         if i < sonar_detections.fish_positions.len() {
             let (x, y) = sonar_detections.fish_positions[i];
             style.left = Val::Px(x - 3.0);
             style.top = Val::Px(y - 3.0);
-            if i < fish_detection_times.detections.len() {
-                let (_, _, det_angle) = fish_detection_times.detections[i];
-                let since = (sweep_angle - det_angle + 2.0 * std::f32::consts::PI)
-                    % (2.0 * std::f32::consts::PI);
-                let alpha = 1.0 - (since / fade_angle);
-                *color = Color::rgba(0.0, 1.0, 0.0, alpha.clamp(0.0, 1.0)).into();
-            } else {
-                *color = Color::rgb(0.0, 1.0, 0.0).into();
-            }
+            *color = Color::rgb(0.0, 1.0, 0.0).into(); // Solid green
         } else {
-            *color = Color::rgba(0.0, 1.0, 0.0, 0.0).into();
+            *color = Color::rgba(0.0, 1.0, 0.0, 0.0).into(); // Transparent
         }
     }
 }
