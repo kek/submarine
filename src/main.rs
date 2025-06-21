@@ -380,14 +380,29 @@ fn collect_fish(
 
 fn ui_system(
     game_state: Res<GameState>,
+    submarine_query: Query<(&Transform, &Velocity), With<Submarine>>,
     mut ui_query: Query<&mut Text>,
 ) {
     if let Ok(mut text) = ui_query.get_single_mut() {
+        let (speed, depth, orientation) = if let Ok((transform, velocity)) = submarine_query.get_single() {
+            let speed = velocity.linvel.length();
+            let depth = -transform.translation.y; // Negative because Y is up in world space
+            let orientation = transform.rotation.to_euler(EulerRot::YXZ);
+            (speed, depth, orientation)
+        } else {
+            (0.0, 0.0, (0.0, 0.0, 0.0))
+        };
+
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
             game_state.score,
             game_state.health,
-            game_state.oxygen
+            game_state.oxygen,
+            speed,
+            depth,
+            orientation.1.to_degrees(),
+            orientation.0.to_degrees(),
+            orientation.2.to_degrees()
         );
     }
 }
