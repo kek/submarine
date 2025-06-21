@@ -213,6 +213,18 @@ fn setup(
         Collider::cuboid(50.0, 0.1, 50.0),
     ));
 
+    // Water surface
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Mesh::from(shape::Plane { size: 100.0, subdivisions: 0 })),
+        material: materials.add(StandardMaterial {
+            base_color: Color::rgba(0.2, 0.4, 0.8, 0.3), // Blue with transparency
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        }),
+        transform: Transform::from_xyz(0.0, 0.0, 0.0),
+        ..default()
+    });
+
     // Spawn some fish
     for i in 0..10 {
         let x = (i as f32 - 5.0) * 8.0;
