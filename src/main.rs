@@ -77,7 +77,8 @@ struct SonarState {
 
 #[derive(Resource)]
 struct SonarDetections {
-    fish_positions: Vec<(f32, f32)>, // (x, y) positions on sonar display
+    fish_positions: Vec<(f32, f32, f32)>, // (x, y, detection_angle) positions on sonar display
+    detection_times: Vec<f32>, // Detection times for each fish (sweep angle when detected)
 }
 
 #[derive(Resource)]
@@ -123,6 +124,7 @@ impl Default for SonarDetections {
     fn default() -> Self {
         Self {
             fish_positions: Vec::new(),
+            detection_times: Vec::new(),
         }
     }
 }
@@ -191,6 +193,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut window_query: Query<&mut Window, With<PrimaryWindow>>,
+    asset_server: Res<AssetServer>,
 ) {
     // Hide mouse cursor
     if let Ok(mut window) = window_query.get_single_mut() {
@@ -407,15 +410,18 @@ fn setup(
                     },
                     ..default()
                 })
-                .with_children(|left_parent| {
-                    left_parent.spawn(TextBundle::from_section(
-                "Submarine Game\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
-                TextStyle {
-                    font_size: 20.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            ));
+                .with_children(|parent| {
+                    parent.spawn((
+                        TextBundle::from_section(
+                            "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
+                            TextStyle {
+                                font_size: 16.0,
+                                color: Color::WHITE,
+                                font: asset_server.load("fonts/NotoSans-Regular.ttf"),
+                            },
+                        ),
+                        UiImage::default(),
+                    ));
                 });
 
             // Right side - Sonar
@@ -778,6 +784,7 @@ fn ui_system(
     fish_query: Query<&Transform, With<Fish>>,
     sonar_state: Res<SonarState>,
     mut ui_query: Query<&mut Text>,
+    sonar_detections: Res<SonarDetections>,
 ) {
     if let Ok(mut text) = ui_query.get_single_mut() {
         let (speed, depth, orientation) =
@@ -809,8 +816,16 @@ fn ui_system(
             0.0
         };
 
+        // Debug fading calculations
+        let fade_debug = if sonar_detections.fish_positions.len() > 0 {
+            let (_, _, fish_angle) = sonar_detections.fish_positions[0];
+            format!("Fish detected: {:.1}°", fish_angle.to_degrees())
+        } else {
+            "No fish detected".to_string()
+        };
+
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
             game_state.oxygen,
@@ -821,7 +836,8 @@ fn ui_system(
             orientation.2.to_degrees(),
             submarine_yaw,
             sweep_angle,
-            fish_angle_deg
+            fish_angle_deg,
+            fade_debug
         );
     }
 }
@@ -866,10 +882,13 @@ fn sonar_detection_system(
     submarine_query: Query<&Transform, With<Submarine>>,
     fish_query: Query<(Entity, &Transform), With<Fish>>,
     mut sonar_detections: ResMut<SonarDetections>,
+    sonar_state: Res<SonarState>,
 ) {
     if let Ok(submarine_transform) = submarine_query.get_single() {
         let mut fish_positions = Vec::new();
+        let mut detection_times = Vec::new();
         let sonar_range = 20.0;
+        let current_sweep_angle = sonar_state.sweep_angle;
 
         // Detect all fish within range
         for (_entity, fish_transform) in fish_query.iter() {
@@ -899,20 +918,24 @@ fn sonar_detection_system(
             let blip_x = sonar_center_x + scaled_dist * fish_angle.cos();
             let blip_y = sonar_center_y - scaled_dist * fish_angle.sin(); // Negative to flip Y axis
             
-            fish_positions.push((blip_x, blip_y));
+            fish_positions.push((blip_x, blip_y, fish_angle));
+            detection_times.push(current_sweep_angle);
         }
         
         sonar_detections.fish_positions = fish_positions;
+        sonar_detections.detection_times = detection_times;
     }
 }
 
 fn sonar_blip_system(
     sonar_detections: Res<SonarDetections>,
     mut blip_query: Query<(&mut Style, &mut BackgroundColor), With<SonarBlip>>,
+    sonar_state: Res<SonarState>,
+    time: Res<Time>,
 ) {
     for (i, (mut style, mut color)) in blip_query.iter_mut().enumerate() {
         if i < sonar_detections.fish_positions.len() {
-            let (x, y) = sonar_detections.fish_positions[i];
+            let (x, y, _fish_angle) = sonar_detections.fish_positions[i];
             style.left = Val::Px(x - 3.0);
             style.top = Val::Px(y - 3.0);
             *color = Color::rgb(0.0, 1.0, 0.0).into(); // Solid green
