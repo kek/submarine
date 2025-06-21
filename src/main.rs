@@ -417,7 +417,7 @@ fn setup(
                             top: Val::Px(0.0),
                             ..default()
                         },
-                        background_color: Color::rgba(1.0, 0.0, 0.0, 0.0).into(), // Transparent initially
+                        background_color: Color::rgba(0.0, 1.0, 0.0, 0.0).into(), // Transparent initially
                         ..default()
                     },
                     SonarBlip,
@@ -712,10 +712,10 @@ fn sonar_blip_system(
             let (x, y) = sonar_detections.fish_positions[i];
             style.left = Val::Px(x - 3.0);
             style.top = Val::Px(y - 3.0);
-            *color = Color::rgb(1.0, 0.0, 0.0).into(); // Red blip
+            *color = Color::rgb(0.0, 1.0, 0.0).into(); // Green blip
         } else {
             // Hide blip if no fish at this index
-            *color = Color::rgba(1.0, 0.0, 0.0, 0.0).into(); // Transparent
+            *color = Color::rgba(0.0, 1.0, 0.0, 0.0).into(); // Transparent
         }
     }
 }
