@@ -3,6 +3,16 @@ use bevy::window::PrimaryWindow;
 use bevy::input::mouse::MouseMotion;
 use bevy_rapier3d::prelude::*;
 use std::collections::HashSet;
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "submarine")]
+#[command(about = "A 3D submarine game")]
+struct Args {
+    /// Enable physics collider wireframes
+    #[arg(short, long)]
+    debug_colliders: bool,
+}
 
 // Components
 #[derive(Component)]
@@ -137,10 +147,12 @@ impl Default for SonarBlipEntities {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
+    let args = Args::parse();
+    
+    let mut app = App::new();
+    
+    app.add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-        .add_plugins(RapierDebugRenderPlugin::default())
         .init_resource::<GameState>()
         .init_resource::<CameraState>()
         .init_resource::<SonarState>()
@@ -160,8 +172,17 @@ fn main() {
             sonar_sweep_update_system,
             sonar_detection_system,
             sonar_blip_system,
-        ))
-        .run();
+        ));
+    
+    // Conditionally add debug render plugin based on command line argument
+    if args.debug_colliders {
+        app.add_plugins(RapierDebugRenderPlugin::default());
+        println!("Physics collider wireframes enabled");
+    } else {
+        println!("Physics collider wireframes disabled (use --debug-colliders to enable)");
+    }
+    
+    app.run();
 }
 
 fn setup(
