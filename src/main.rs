@@ -220,8 +220,7 @@ fn setup(
     let submarine_entity = commands
         .spawn((
             SpatialBundle {
-                transform: Transform::from_xyz(0.0, 0.0, 0.0)
-                    .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+                transform: Transform::from_xyz(0.0, 0.0, 0.0),
                 ..default()
             },
             Submarine,
@@ -235,7 +234,7 @@ fn setup(
             },
             Score { value: 0 },
             RigidBody::Dynamic,
-            Collider::capsule(Vec3::new(0.0, -2.0, 0.0), Vec3::new(0.0, 2.0, 0.0), 0.7),
+            Collider::capsule(Vec3::new(0.0, 0.0, -2.0), Vec3::new(0.0, 0.0, 2.0), 0.7),
             Velocity::zero(),
             GravityScale(0.0),
         ))
@@ -243,7 +242,7 @@ fn setup(
 
     // Add child entities for the submarine parts
     commands.entity(submarine_entity).with_children(|parent| {
-        // Main hull (cylinder)
+        // Main hull (cylinder) - now pointing along Z-axis
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Cylinder {
                 radius: 0.7,
@@ -255,11 +254,11 @@ fn setup(
                 base_color: Color::rgb(0.3, 0.3, 0.5),
                 ..default()
             }),
-            transform: Transform::IDENTITY,
+            transform: Transform::from_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ..default()
         });
 
-        // Bow (front sphere)
+        // Bow (front sphere) - at positive Z
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::UVSphere {
                 radius: 0.7,
@@ -270,11 +269,11 @@ fn setup(
                 base_color: Color::rgb(0.3, 0.3, 0.5),
                 ..default()
             }),
-            transform: Transform::from_xyz(0.0, 2.0, 0.0),
+            transform: Transform::from_xyz(0.0, 0.0, 2.0),
             ..default()
         });
 
-        // Stern (back sphere)
+        // Stern (back sphere) - at negative Z
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::UVSphere {
                 radius: 0.7,
@@ -285,11 +284,11 @@ fn setup(
                 base_color: Color::rgb(0.3, 0.3, 0.5),
                 ..default()
             }),
-            transform: Transform::from_xyz(0.0, -2.0, 0.0),
+            transform: Transform::from_xyz(0.0, 0.0, -2.0),
             ..default()
         });
 
-        // Horizontal stabilizers (wings)
+        // Horizontal stabilizers (wings) - at the stern
         let wing_material = materials.add(StandardMaterial {
             base_color: Color::rgb(0.8, 0.2, 0.2),
             ..default()
@@ -299,8 +298,7 @@ fn setup(
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.8, 0.2, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(-0.9, -0.2, 0.0)
-                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(-0.9, 0.0, -0.2),
             ..default()
         });
 
@@ -308,17 +306,15 @@ fn setup(
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.8, 0.2, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(0.9, -0.2, 0.0)
-                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(0.9, 0.0, -0.2),
             ..default()
         });
 
-        // Vertical stabilizer (rudder)
+        // Vertical stabilizer (rudder) - at the stern
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.2, 0.6, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(0.0, 2.0, 0.7)
-                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(0.0, 0.7, -0.2),
             ..default()
         });
     });
@@ -598,9 +594,9 @@ fn submarine_movement(
         // Calculate movement in local forward direction
         let mut local_velocity = Vec3::ZERO;
         if (move_direction as f32).abs() > 0.0 {
-            // Forward is negative Y after 90-degree X rotation (original Z becomes Y)
+            // Forward is negative Z in standard Bevy coordinates
             local_velocity +=
-                transform.rotation * Vec3::new(0.0, -1.0, 0.0) * move_direction * speed;
+                transform.rotation * Vec3::new(0.0, 0.0, -1.0) * move_direction * speed;
         }
         if (vertical_direction as f32).abs() > 0.0 {
             local_velocity.y += vertical_direction * speed;
