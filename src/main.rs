@@ -1,3 +1,282 @@
+use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
+
+// Components
+#[derive(Component)]
+struct Submarine;
+
+#[derive(Component)]
+struct Fish;
+
+#[derive(Component)]
+struct CameraFollow;
+
+#[derive(Component)]
+struct Health {
+    current: f32,
+    max: f32,
+}
+
+#[derive(Component)]
+struct Oxygen {
+    current: f32,
+    max: f32,
+}
+
+#[derive(Component)]
+struct Score {
+    value: u32,
+}
+
+// Resources
+#[derive(Resource)]
+struct GameState {
+    score: u32,
+    health: f32,
+    oxygen: f32,
+}
+
+impl Default for GameState {
+    fn default() -> Self {
+        Self {
+            score: 0,
+            health: 100.0,
+            oxygen: 100.0,
+        }
+    }
+}
+
 fn main() {
-    println!("Hello, world!");
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugins(RapierDebugRenderPlugin::default())
+        .init_resource::<GameState>()
+        .add_systems(Startup, setup)
+        .add_systems(Update, (
+            submarine_movement,
+            camera_follow,
+            fish_movement,
+            oxygen_system,
+            collect_fish,
+            ui_system,
+        ))
+        .run();
+}
+
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // Camera
+    commands.spawn((
+        Camera3dBundle {
+            transform: Transform::from_xyz(0.0, 5.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
+            ..default()
+        },
+        CameraFollow,
+    ));
+
+    // Lighting
+    commands.spawn(DirectionalLightBundle {
+        directional_light: DirectionalLight {
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ..default()
+    });
+
+    // Submarine
+    commands.spawn((
+        PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 1.0, sectors: 32, stacks: 16 })),
+            material: materials.add(StandardMaterial {
+                base_color: Color::rgb(0.3, 0.3, 0.5),
+                ..default()
+            }),
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            ..default()
+        },
+        Submarine,
+        Health { current: 100.0, max: 100.0 },
+        Oxygen { current: 100.0, max: 100.0 },
+        Score { value: 0 },
+        RigidBody::Dynamic,
+        Collider::ball(1.0),
+        Velocity::zero(),
+        GravityScale(0.5),
+    ));
+
+    // Ocean floor
+    commands.spawn((
+        PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::Plane { size: 100.0, subdivisions: 0 })),
+            material: materials.add(StandardMaterial {
+                base_color: Color::rgb(0.1, 0.2, 0.3),
+                ..default()
+            }),
+            transform: Transform::from_xyz(0.0, -20.0, 0.0),
+            ..default()
+        },
+        RigidBody::Fixed,
+        Collider::cuboid(50.0, 0.1, 50.0),
+    ));
+
+    // Spawn some fish
+    for i in 0..10 {
+        let x = (i as f32 - 5.0) * 8.0;
+        let y = (i % 3) as f32 * 3.0 - 5.0;
+        let z = (i % 2) as f32 * 10.0 - 5.0;
+        
+        commands.spawn((
+            PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 0.3, sectors: 16, stacks: 8 })),
+                material: materials.add(StandardMaterial {
+                    base_color: Color::rgb(0.8, 0.6, 0.2),
+                    ..default()
+                }),
+                transform: Transform::from_xyz(x, y, z),
+                ..default()
+            },
+            Fish,
+            RigidBody::Dynamic,
+            Collider::ball(0.3),
+            Velocity::zero(),
+            GravityScale(0.0),
+        ));
+    }
+
+    // UI
+    commands.spawn(NodeBundle {
+        style: Style {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            padding: UiRect::all(Val::Px(20.0)),
+            ..default()
+        },
+        ..default()
+    }).with_children(|parent| {
+        parent.spawn(TextBundle::from_section(
+            "Submarine Game\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
+            TextStyle {
+                font_size: 20.0,
+                color: Color::WHITE,
+                ..default()
+            },
+        ));
+    });
+}
+
+fn submarine_movement(
+    keyboard_input: Res<Input<KeyCode>>,
+    mut submarine_query: Query<&mut Velocity, With<Submarine>>,
+    time: Res<Time>,
+) {
+    if let Ok(mut velocity) = submarine_query.get_single_mut() {
+        let mut direction = Vec3::ZERO;
+        let speed = 10.0;
+
+        if keyboard_input.pressed(KeyCode::W) {
+            direction.z -= 1.0;
+        }
+        if keyboard_input.pressed(KeyCode::S) {
+            direction.z += 1.0;
+        }
+        if keyboard_input.pressed(KeyCode::A) {
+            direction.x -= 1.0;
+        }
+        if keyboard_input.pressed(KeyCode::D) {
+            direction.x += 1.0;
+        }
+        if keyboard_input.pressed(KeyCode::Space) {
+            direction.y += 1.0;
+        }
+        if keyboard_input.pressed(KeyCode::ShiftLeft) {
+            direction.y -= 1.0;
+        }
+
+        if direction.length() > 0.0 {
+            direction = direction.normalize();
+            velocity.linvel = direction * speed;
+        } else {
+            velocity.linvel *= 0.9; // Apply some drag
+        }
+    }
+}
+
+fn camera_follow(
+    submarine_query: Query<&Transform, With<Submarine>>,
+    mut camera_query: Query<&mut Transform, (With<CameraFollow>, Without<Submarine>)>,
+) {
+    if let Ok(submarine_transform) = submarine_query.get_single() {
+        if let Ok(mut camera_transform) = camera_query.get_single_mut() {
+            let target_position = submarine_transform.translation + Vec3::new(0.0, 5.0, 10.0);
+            camera_transform.translation = camera_transform.translation.lerp(target_position, 0.1);
+            camera_transform.look_at(submarine_transform.translation, Vec3::Y);
+        }
+    }
+}
+
+fn fish_movement(
+    mut fish_query: Query<&mut Transform, With<Fish>>,
+    time: Res<Time>,
+) {
+    for mut fish_transform in fish_query.iter_mut() {
+        let elapsed_time = time.elapsed_seconds();
+        let offset = Vec3::new(
+            (elapsed_time * 0.5).sin() * 2.0,
+            (elapsed_time * 0.3).sin() * 1.0,
+            (elapsed_time * 0.7).cos() * 2.0,
+        );
+        fish_transform.translation += offset * time.delta_seconds() * 0.5;
+    }
+}
+
+fn oxygen_system(
+    mut game_state: ResMut<GameState>,
+    time: Res<Time>,
+) {
+    // Oxygen decreases over time
+    game_state.oxygen -= time.delta_seconds() * 2.0;
+    game_state.oxygen = game_state.oxygen.max(0.0);
+    
+    // If oxygen runs out, health decreases
+    if game_state.oxygen <= 0.0 {
+        game_state.health -= time.delta_seconds() * 5.0;
+        game_state.health = game_state.health.max(0.0);
+    }
+}
+
+fn collect_fish(
+    mut commands: Commands,
+    submarine_query: Query<&Transform, With<Submarine>>,
+    fish_query: Query<(Entity, &Transform), With<Fish>>,
+    mut game_state: ResMut<GameState>,
+) {
+    if let Ok(submarine_transform) = submarine_query.get_single() {
+        for (fish_entity, fish_transform) in fish_query.iter() {
+            let distance = submarine_transform.translation.distance(fish_transform.translation);
+            if distance < 2.0 {
+                commands.entity(fish_entity).despawn();
+                game_state.score += 10;
+                game_state.oxygen = (game_state.oxygen + 20.0).min(100.0);
+            }
+        }
+    }
+}
+
+fn ui_system(
+    game_state: Res<GameState>,
+    mut ui_query: Query<&mut Text>,
+) {
+    if let Ok(mut text) = ui_query.get_single_mut() {
+        text.sections[0].value = format!(
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
+            game_state.score,
+            game_state.health,
+            game_state.oxygen
+        );
+    }
 }
