@@ -33,6 +33,9 @@ struct Score {
 #[derive(Component)]
 struct SonarSweepLine;
 
+#[derive(Component)]
+struct SonarBlip;
+
 // Resources
 #[derive(Resource)]
 struct GameState {
@@ -51,6 +54,16 @@ struct CameraState {
 #[derive(Resource)]
 struct SonarState {
     sweep_angle: f32,
+}
+
+#[derive(Resource)]
+struct SonarDetections {
+    fish_positions: Vec<(f32, f32)>, // (x, y) positions on sonar display
+}
+
+#[derive(Resource)]
+struct SonarBlipEntities {
+    entities: Vec<Entity>,
 }
 
 impl Default for GameState {
@@ -81,6 +94,22 @@ impl Default for SonarState {
     }
 }
 
+impl Default for SonarDetections {
+    fn default() -> Self {
+        Self {
+            fish_positions: Vec::new(),
+        }
+    }
+}
+
+impl Default for SonarBlipEntities {
+    fn default() -> Self {
+        Self {
+            entities: Vec::new(),
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -89,6 +118,8 @@ fn main() {
         .init_resource::<GameState>()
         .init_resource::<CameraState>()
         .init_resource::<SonarState>()
+        .init_resource::<SonarDetections>()
+        .init_resource::<SonarBlipEntities>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
             submarine_movement,
@@ -100,6 +131,8 @@ fn main() {
             ui_system,
             sonar_sweep_system,
             sonar_sweep_update_system,
+            sonar_detection_system,
+            sonar_blip_system,
         ))
         .run();
 }
@@ -372,7 +405,26 @@ fn setup(
                 ..default()
             });
 
-            // Create a solid-looking sweep line using many small segments
+            // Create blip entities for fish detection
+            for _ in 0..10 {
+                sonar_parent.spawn((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Px(6.0),
+                            height: Val::Px(6.0),
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(0.0),
+                            top: Val::Px(0.0),
+                            ..default()
+                        },
+                        background_color: Color::rgba(1.0, 0.0, 0.0, 0.0).into(), // Transparent initially
+                        ..default()
+                    },
+                    SonarBlip,
+                ));
+            }
+
+            // Create sweep line segments for rotating sweep effect
             for _ in 0..20 {
                 sonar_parent.spawn((
                     NodeBundle {
@@ -603,5 +655,67 @@ fn sonar_sweep_update_system(
         style.top = Val::Px(segment_y - 1.0);
         style.width = Val::Px(2.0);
         style.height = Val::Px(2.0);
+    }
+}
+
+fn sonar_detection_system(
+    submarine_query: Query<&Transform, With<Submarine>>,
+    fish_query: Query<&Transform, With<Fish>>,
+    mut sonar_detections: ResMut<SonarDetections>,
+) {
+    if let Ok(submarine_transform) = submarine_query.get_single() {
+        let mut fish_positions = Vec::new();
+        let sonar_range = 20.0; // Sonar detection range
+        
+        // Calculate blip positions for detected fish
+        for fish_transform in fish_query.iter() {
+            let distance = submarine_transform.translation.distance(fish_transform.translation);
+            
+            if distance <= sonar_range {
+                // Calculate relative position of fish to submarine
+                let relative_pos = fish_transform.translation - submarine_transform.translation;
+                
+                // Convert 3D position to 2D sonar coordinates
+                let sonar_center_x = 100.0;
+                let sonar_center_y = 100.0;
+                let sonar_radius = 75.0;
+                
+                // Calculate angle and distance for sonar display
+                let angle = relative_pos.x.atan2(relative_pos.z); // Yaw angle
+                let distance_2d = (relative_pos.x * relative_pos.x + relative_pos.z * relative_pos.z).sqrt();
+                
+                // Scale distance to fit in sonar display
+                let scaled_distance = (distance_2d / sonar_range) * sonar_radius;
+                let scaled_distance = scaled_distance.min(sonar_radius); // Clamp to sonar radius
+                
+                // Calculate blip position on sonar
+                let blip_x = sonar_center_x + scaled_distance * angle.cos();
+                let blip_y = sonar_center_y + scaled_distance * angle.sin();
+                
+                fish_positions.push((blip_x, blip_y));
+            }
+        }
+        
+        sonar_detections.fish_positions = fish_positions;
+    }
+}
+
+fn sonar_blip_system(
+    sonar_detections: Res<SonarDetections>,
+    mut blip_query: Query<(&mut Style, &mut BackgroundColor), With<SonarBlip>>,
+) {
+    let mut blip_iter = blip_query.iter_mut();
+    
+    // Update blips for detected fish
+    for (i, (mut style, mut color)) in blip_iter.enumerate() {
+        if i < sonar_detections.fish_positions.len() {
+            let (x, y) = sonar_detections.fish_positions[i];
+            style.left = Val::Px(x - 3.0);
+            style.top = Val::Px(y - 3.0);
+            *color = Color::rgb(1.0, 0.0, 0.0).into(); // Red blip
+        } else {
+            // Hide blip if no fish at this index
+            *color = Color::rgba(1.0, 0.0, 0.0, 0.0).into(); // Transparent
+        }
     }
 }
