@@ -205,7 +205,7 @@ fn setup(
         Oxygen { current: 100.0, max: 100.0 },
         Score { value: 0 },
         RigidBody::Dynamic,
-        Collider::cylinder(0.7, 2.0),
+        Collider::capsule(Vec3::new(0.0, -2.0, 0.0), Vec3::new(0.0, 2.0, 0.0), 0.7),
         Velocity::zero(),
         GravityScale(0.0),
     ))
