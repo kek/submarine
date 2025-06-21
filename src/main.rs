@@ -254,19 +254,105 @@ fn setup(
         style: Style {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
             padding: UiRect::all(Val::Px(20.0)),
             ..default()
         },
         ..default()
     }).with_children(|parent| {
-        parent.spawn(TextBundle::from_section(
-            "Submarine Game\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
-            TextStyle {
-                font_size: 20.0,
-                color: Color::WHITE,
+        // Left side - Main HUD
+        parent.spawn(NodeBundle {
+            style: Style {
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
-        ));
+            ..default()
+        }).with_children(|left_parent| {
+            left_parent.spawn(TextBundle::from_section(
+                "Submarine Game\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
+                TextStyle {
+                    font_size: 20.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            ));
+        });
+
+        // Right side - Sonar
+        parent.spawn(NodeBundle {
+            style: Style {
+                width: Val::Px(200.0),
+                height: Val::Px(200.0),
+                align_self: AlignSelf::FlexEnd,
+                ..default()
+            },
+            background_color: Color::rgba(0.0, 0.0, 0.0, 0.5).into(),
+            ..default()
+        }).with_children(|sonar_parent| {
+            // Sonar circle (approximated with multiple small squares)
+            for i in 0..360 {
+                let angle = i as f32 * std::f32::consts::PI / 180.0;
+                let radius = 75.0;
+                let x = 100.0 + radius * angle.cos();
+                let y = 100.0 + radius * angle.sin();
+                
+                sonar_parent.spawn(NodeBundle {
+                    style: Style {
+                        width: Val::Px(2.0),
+                        height: Val::Px(2.0),
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(x - 1.0),
+                        top: Val::Px(y - 1.0),
+                        ..default()
+                    },
+                    background_color: Color::GREEN.into(),
+                    ..default()
+                });
+            }
+
+            // Vertical cross line
+            sonar_parent.spawn(NodeBundle {
+                style: Style {
+                    width: Val::Px(2.0),
+                    height: Val::Px(150.0),
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(99.0),
+                    top: Val::Px(25.0),
+                    ..default()
+                },
+                background_color: Color::GREEN.into(),
+                ..default()
+            });
+
+            // Horizontal cross line
+            sonar_parent.spawn(NodeBundle {
+                style: Style {
+                    width: Val::Px(150.0),
+                    height: Val::Px(2.0),
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(25.0),
+                    top: Val::Px(99.0),
+                    ..default()
+                },
+                background_color: Color::GREEN.into(),
+                ..default()
+            });
+
+            // Center dot
+            sonar_parent.spawn(NodeBundle {
+                style: Style {
+                    width: Val::Px(6.0),
+                    height: Val::Px(6.0),
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(97.0),
+                    top: Val::Px(97.0),
+                    ..default()
+                },
+                background_color: Color::GREEN.into(),
+                ..default()
+            });
+        });
     });
 }
 
@@ -370,6 +456,11 @@ fn fish_movement(
             (elapsed_time * 0.7).cos() * 2.0,
         );
         fish_transform.translation += offset * time.delta_seconds() * 0.5;
+        
+        // Prevent fish from going above the surface (Y > 0)
+        if fish_transform.translation.y > 0.0 {
+            fish_transform.translation.y = 0.0;
+        }
     }
 }
 

@@ -63,4 +63,43 @@ This game is built using:
 - Power-ups and special abilities
 - Multiple levels and environments
 - Sound effects and music
-- Multiplayer support 
+- Multiplayer support
+
+## Roadmap
+
+### Sonar System Enhancements
+- **Rotating Sweep Line**: Add a rotating line that spins around the sonar circle for active scanning
+- **Fish Detection Blips**: Display nearby fish as dots on the sonar display
+- **Distance Rings**: Add concentric circles for range indication
+- **Target Tracking**: Highlight and track specific targets with directional indicators
+- **Active Scanning Effects**: Visual effects when sonar detects objects
+- **Sonar Range Settings**: Adjustable detection range and sensitivity
+
+### Gameplay Improvements
+- **Advanced Submarine Controls**: Add roll, pitch, and yaw controls for more realistic submarine movement
+- **Sonar System**: Implement active and passive sonar with different detection ranges
+- **Underwater Currents**: Add dynamic water currents that affect submarine movement
+- **Depth Pressure**: Implement pressure effects at different depths
+- **Submarine Damage System**: Add collision damage and repair mechanics
+- **Mission System**: Create specific objectives and missions to complete
+
+### Visual and Audio Enhancements
+- **Particle Effects**: Add bubbles, underwater particles, and environmental effects
+- **Dynamic Lighting**: Implement underwater lighting with depth-based color changes
+- **Sound Design**: Add submarine engine sounds, underwater ambience, and sonar pings
+- **Visual Filters**: Add depth-based visual effects and underwater distortion
+- **Weather Effects**: Surface weather that affects underwater visibility
+
+### Environment Expansion
+- **Coral Reefs**: Add colorful coral reef environments with diverse marine life
+- **Shipwrecks**: Explore sunken ships and underwater ruins
+- **Caves and Tunnels**: Add underwater cave systems to explore
+- **Different Biomes**: Various underwater environments (deep sea, kelp forests, etc.)
+- **Day/Night Cycle**: Dynamic lighting and fish behavior changes
+
+### Technical Improvements
+- **Save/Load System**: Save game progress and submarine upgrades
+- **Performance Optimization**: Improve frame rates and reduce resource usage
+- **Modding Support**: Allow custom content and modifications
+- **Achievement System**: Add achievements and unlockable content
+- **Statistics Tracking**: Track detailed gameplay statistics and records 
