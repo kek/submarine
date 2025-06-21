@@ -128,7 +128,7 @@ fn setup(
         RigidBody::Dynamic,
         Collider::cylinder(0.7, 2.0),
         Velocity::zero(),
-        GravityScale(0.5),
+        GravityScale(0.0),
     ))
     .id();
 
@@ -260,10 +260,10 @@ fn setup(
 
 fn submarine_movement(
     keyboard_input: Res<Input<KeyCode>>,
-    mut submarine_query: Query<&mut Velocity, With<Submarine>>,
-    _time: Res<Time>,
+    mut submarine_query: Query<(&mut Velocity, &mut Transform), With<Submarine>>,
+    time: Res<Time>,
 ) {
-    if let Ok(mut velocity) = submarine_query.get_single_mut() {
+    if let Ok((mut velocity, mut transform)) = submarine_query.get_single_mut() {
         let mut direction = Vec3::ZERO;
         let speed = 10.0;
 
@@ -291,6 +291,21 @@ fn submarine_movement(
             velocity.linvel = direction * speed;
         } else {
             velocity.linvel *= 0.9; // Apply some drag
+        }
+
+        // Apply buoyancy force (upward force when underwater)
+        if transform.translation.y < 0.0 {
+            let buoyancy_force = 15.0; // Upward force
+            velocity.linvel.y += buoyancy_force * time.delta_seconds();
+        }
+
+        // Prevent submarine from going above the surface (Y > 0)
+        if transform.translation.y > 0.0 {
+            transform.translation.y = 0.0;
+            // Stop upward velocity when hitting the surface
+            if velocity.linvel.y > 0.0 {
+                velocity.linvel.y = 0.0;
+            }
         }
     }
 }
@@ -356,8 +371,8 @@ fn oxygen_system(
         0.0
     };
 
-    if depth < 0.0 {
-        // Above surface - increase oxygen
+    if depth <= 0.0 {
+        // At or above surface - increase oxygen
         game_state.oxygen += time.delta_seconds() * 5.0;
         game_state.oxygen = game_state.oxygen.min(100.0);
     } else {
