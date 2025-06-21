@@ -1,4 +1,3 @@
-use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_rapier3d::prelude::*;
@@ -165,7 +164,6 @@ fn main() {
             (
                 submarine_movement,
                 camera_follow,
-                mouse_camera_control,
                 fish_movement,
                 oxygen_system,
                 collect_fish,
@@ -420,7 +418,7 @@ fn setup(
                 })
                 .with_children(|left_parent| {
                     left_parent.spawn(TextBundle::from_section(
-                "Submarine Game\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
+                "Submarine Game\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
                 TextStyle {
                     font_size: 20.0,
                     color: Color::WHITE,
@@ -549,6 +547,7 @@ fn setup(
 fn submarine_movement(
     keyboard_input: Res<Input<KeyCode>>,
     mut submarine_query: Query<(&mut Velocity, &mut Transform), With<Submarine>>,
+    mut camera_state: ResMut<CameraState>,
     time: Res<Time>,
 ) {
     if let Ok((mut velocity, mut transform)) = submarine_query.get_single_mut() {
@@ -556,6 +555,7 @@ fn submarine_movement(
         let mut vertical_direction = 0.0;
         let speed = 10.0;
         let turn_speed = 1.5; // radians/sec
+        let camera_rotation_speed = 2.0; // radians/sec
 
         // Forward/backward in facing direction
         if keyboard_input.pressed(KeyCode::W) {
@@ -577,6 +577,22 @@ fn submarine_movement(
         }
         if keyboard_input.pressed(KeyCode::ShiftLeft) {
             vertical_direction -= 1.0;
+        }
+
+        // Camera rotation with arrow keys
+        if keyboard_input.pressed(KeyCode::Left) {
+            camera_state.yaw -= camera_rotation_speed * time.delta_seconds();
+        }
+        if keyboard_input.pressed(KeyCode::Right) {
+            camera_state.yaw += camera_rotation_speed * time.delta_seconds();
+        }
+        if keyboard_input.pressed(KeyCode::Up) {
+            camera_state.pitch += camera_rotation_speed * time.delta_seconds();
+            camera_state.pitch = camera_state.pitch.clamp(-1.0, 1.0);
+        }
+        if keyboard_input.pressed(KeyCode::Down) {
+            camera_state.pitch -= camera_rotation_speed * time.delta_seconds();
+            camera_state.pitch = camera_state.pitch.clamp(-1.0, 1.0);
         }
 
         // Calculate movement in local forward direction
@@ -643,22 +659,6 @@ fn camera_follow(
             camera_transform.translation = camera_transform.translation.lerp(target_position, 0.1);
             camera_transform.look_at(submarine_transform.translation, Vec3::Y);
         }
-    }
-}
-
-fn mouse_camera_control(
-    mut camera_state: ResMut<CameraState>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
-) {
-    let sensitivity = 0.005;
-
-    for event in mouse_motion_events.read() {
-        // Add mouse movement to camera offset (relative to submarine rotation)
-        camera_state.yaw -= event.delta.x * sensitivity;
-        camera_state.pitch -= event.delta.y * sensitivity;
-
-        // Clamp pitch to prevent camera flipping
-        camera_state.pitch = camera_state.pitch.clamp(-1.0, 1.0);
     }
 }
 
@@ -798,7 +798,7 @@ fn ui_system(
             };
 
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
             game_state.oxygen,
