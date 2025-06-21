@@ -347,11 +347,24 @@ fn fish_movement(
 
 fn oxygen_system(
     mut game_state: ResMut<GameState>,
+    submarine_query: Query<&Transform, With<Submarine>>,
     time: Res<Time>,
 ) {
-    // Oxygen decreases over time
-    game_state.oxygen -= time.delta_seconds() * 2.0;
-    game_state.oxygen = game_state.oxygen.max(0.0);
+    let depth = if let Ok(transform) = submarine_query.get_single() {
+        -transform.translation.y // Negative because Y is up in world space
+    } else {
+        0.0
+    };
+
+    if depth < 0.0 {
+        // Above surface - increase oxygen
+        game_state.oxygen += time.delta_seconds() * 5.0;
+        game_state.oxygen = game_state.oxygen.min(100.0);
+    } else {
+        // Below surface - decrease oxygen
+        game_state.oxygen -= time.delta_seconds() * 2.0;
+        game_state.oxygen = game_state.oxygen.max(0.0);
+    }
     
     // If oxygen runs out, health decreases
     if game_state.oxygen <= 0.0 {
