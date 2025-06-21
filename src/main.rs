@@ -68,6 +68,7 @@ struct CameraState {
     distance: f32,
     yaw: f32,
     pitch: f32,
+    target_yaw: f32, // Target yaw that follows submarine rotation
 }
 
 #[derive(Resource)]
@@ -108,6 +109,7 @@ impl Default for CameraState {
             distance: 15.0,
             yaw: 0.0,
             pitch: 0.0,
+            target_yaw: 0.0,
         }
     }
 }
@@ -614,10 +616,23 @@ fn submarine_movement(
 fn camera_follow(
     submarine_query: Query<&Transform, With<Submarine>>,
     mut camera_query: Query<&mut Transform, (With<CameraFollow>, Without<Submarine>)>,
-    camera_state: Res<CameraState>,
+    mut camera_state: ResMut<CameraState>,
+    time: Res<Time>,
 ) {
     if let Ok(submarine_transform) = submarine_query.get_single() {
         if let Ok(mut camera_transform) = camera_query.get_single_mut() {
+            // Get submarine's yaw rotation
+            let submarine_yaw = submarine_transform.rotation.to_euler(EulerRot::YXZ).0;
+            
+            // Update target yaw to follow submarine rotation
+            camera_state.target_yaw = submarine_yaw;
+            
+            // Smoothly interpolate camera yaw towards target yaw (rubber band effect)
+            let yaw_lerp_speed = 2.0; // Adjust this for faster/slower camera following
+            let angle_diff = (camera_state.target_yaw - camera_state.yaw + std::f32::consts::PI) 
+                % (2.0 * std::f32::consts::PI) - std::f32::consts::PI;
+            camera_state.yaw += angle_diff * yaw_lerp_speed * time.delta_seconds();
+            
             // Calculate camera position based on yaw and pitch
             // When yaw=0, pitch=0: camera should be behind submarine (positive Z)
             let x = camera_state.distance * camera_state.yaw.sin();
@@ -638,6 +653,7 @@ fn mouse_camera_control(
     let sensitivity = 0.005;
 
     for event in mouse_motion_events.read() {
+        // Add mouse movement to camera offset (relative to submarine rotation)
         camera_state.yaw -= event.delta.x * sensitivity;
         camera_state.pitch -= event.delta.y * sensitivity;
 
