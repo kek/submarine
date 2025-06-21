@@ -1,9 +1,9 @@
+use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy::input::mouse::MouseMotion;
 use bevy_rapier3d::prelude::*;
-use std::collections::HashSet;
 use clap::Parser;
+use std::collections::HashSet;
 
 #[derive(Parser)]
 #[command(name = "submarine")]
@@ -84,7 +84,7 @@ struct SonarDetections {
 struct FishDetectionTimes {
     detections: Vec<(f32, f32, f32)>, // (x, y, detection_angle) for each detected fish
     detected_fish_entities: HashSet<Entity>, // Track fish entities detected this sweep
-    last_angle: Option<f32>, // Last detected angle for cycle detection
+    last_angle: Option<f32>,          // Last detected angle for cycle detection
 }
 
 #[derive(Resource)]
@@ -114,9 +114,7 @@ impl Default for CameraState {
 
 impl Default for SonarState {
     fn default() -> Self {
-        Self {
-            sweep_angle: 0.0,
-        }
+        Self { sweep_angle: 0.0 }
     }
 }
 
@@ -148,9 +146,9 @@ impl Default for SonarBlipEntities {
 
 fn main() {
     let args = Args::parse();
-    
+
     let mut app = App::new();
-    
+
     app.add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .init_resource::<GameState>()
@@ -160,20 +158,23 @@ fn main() {
         .init_resource::<FishDetectionTimes>()
         .init_resource::<SonarBlipEntities>()
         .add_systems(Startup, setup)
-        .add_systems(Update, (
-            submarine_movement,
-            camera_follow,
-            mouse_camera_control,
-            fish_movement,
-            oxygen_system,
-            collect_fish,
-            ui_system,
-            sonar_sweep_system,
-            sonar_sweep_update_system,
-            sonar_detection_system,
-            sonar_blip_system,
-        ));
-    
+        .add_systems(
+            Update,
+            (
+                submarine_movement,
+                camera_follow,
+                mouse_camera_control,
+                fish_movement,
+                oxygen_system,
+                collect_fish,
+                ui_system,
+                sonar_sweep_system,
+                sonar_sweep_update_system,
+                sonar_detection_system,
+                sonar_blip_system,
+            ),
+        );
+
     // Conditionally add debug render plugin based on command line argument
     if args.debug_colliders {
         app.add_plugins(RapierDebugRenderPlugin::default());
@@ -181,7 +182,7 @@ fn main() {
     } else {
         println!("Physics collider wireframes disabled (use --debug-colliders to enable)");
     }
-    
+
     app.run();
 }
 
@@ -216,27 +217,40 @@ fn setup(
     });
 
     // Submarine (simple cylinder with rounded ends)
-    let submarine_entity = commands.spawn((
-        SpatialBundle {
-            transform: Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
-            ..default()
-        },
-        Submarine,
-        Health { current: 100.0, max: 100.0 },
-        Oxygen { current: 100.0, max: 100.0 },
-        Score { value: 0 },
-        RigidBody::Dynamic,
-        Collider::capsule(Vec3::new(0.0, -2.0, 0.0), Vec3::new(0.0, 2.0, 0.0), 0.7),
-        Velocity::zero(),
-        GravityScale(0.0),
-    ))
-    .id();
+    let submarine_entity = commands
+        .spawn((
+            SpatialBundle {
+                transform: Transform::from_xyz(0.0, 0.0, 0.0)
+                    .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+                ..default()
+            },
+            Submarine,
+            Health {
+                current: 100.0,
+                max: 100.0,
+            },
+            Oxygen {
+                current: 100.0,
+                max: 100.0,
+            },
+            Score { value: 0 },
+            RigidBody::Dynamic,
+            Collider::capsule(Vec3::new(0.0, -2.0, 0.0), Vec3::new(0.0, 2.0, 0.0), 0.7),
+            Velocity::zero(),
+            GravityScale(0.0),
+        ))
+        .id();
 
     // Add child entities for the submarine parts
     commands.entity(submarine_entity).with_children(|parent| {
         // Main hull (cylinder)
         parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cylinder { radius: 0.7, height: 4.0, resolution: 32, segments: 1 })),
+            mesh: meshes.add(Mesh::from(shape::Cylinder {
+                radius: 0.7,
+                height: 4.0,
+                resolution: 32,
+                segments: 1,
+            })),
             material: materials.add(StandardMaterial {
                 base_color: Color::rgb(0.3, 0.3, 0.5),
                 ..default()
@@ -244,10 +258,14 @@ fn setup(
             transform: Transform::IDENTITY,
             ..default()
         });
-        
+
         // Bow (front sphere)
         parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 0.7, sectors: 32, stacks: 16 })),
+            mesh: meshes.add(Mesh::from(shape::UVSphere {
+                radius: 0.7,
+                sectors: 32,
+                stacks: 16,
+            })),
             material: materials.add(StandardMaterial {
                 base_color: Color::rgb(0.3, 0.3, 0.5),
                 ..default()
@@ -255,10 +273,14 @@ fn setup(
             transform: Transform::from_xyz(0.0, 2.0, 0.0),
             ..default()
         });
-        
+
         // Stern (back sphere)
         parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 0.7, sectors: 32, stacks: 16 })),
+            mesh: meshes.add(Mesh::from(shape::UVSphere {
+                radius: 0.7,
+                sectors: 32,
+                stacks: 16,
+            })),
             material: materials.add(StandardMaterial {
                 base_color: Color::rgb(0.3, 0.3, 0.5),
                 ..default()
@@ -266,34 +288,37 @@ fn setup(
             transform: Transform::from_xyz(0.0, -2.0, 0.0),
             ..default()
         });
-        
+
         // Horizontal stabilizers (wings)
         let wing_material = materials.add(StandardMaterial {
             base_color: Color::rgb(0.8, 0.2, 0.2),
             ..default()
         });
-        
+
         // Left wing
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.8, 0.2, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(-0.9, -0.2, 0.0).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(-0.9, -0.2, 0.0)
+                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ..default()
         });
-        
+
         // Right wing
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.8, 0.2, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(0.9, -0.2, 0.0).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(0.9, -0.2, 0.0)
+                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ..default()
         });
-        
+
         // Vertical stabilizer (rudder)
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.2, 0.6, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(0.0, 2.0, 0.7).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(0.0, 2.0, 0.7)
+                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ..default()
         });
     });
@@ -301,7 +326,10 @@ fn setup(
     // Ocean floor
     commands.spawn((
         PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Plane { size: 100.0, subdivisions: 0 })),
+            mesh: meshes.add(Mesh::from(shape::Plane {
+                size: 100.0,
+                subdivisions: 0,
+            })),
             material: materials.add(StandardMaterial {
                 base_color: Color::rgb(0.1, 0.2, 0.3),
                 ..default()
@@ -315,7 +343,10 @@ fn setup(
 
     // Water surface
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Plane { size: 100.0, subdivisions: 0 })),
+        mesh: meshes.add(Mesh::from(shape::Plane {
+            size: 100.0,
+            subdivisions: 0,
+        })),
         material: materials.add(StandardMaterial {
             base_color: Color::rgba(0.2, 0.4, 0.8, 0.3), // Blue with transparency
             alpha_mode: AlphaMode::Blend,
@@ -332,10 +363,14 @@ fn setup(
         let x = angle.cos() * distance;
         let z = angle.sin() * distance;
         let y = -3.0 - (i % 3) as f32 * 3.0; // More varied depths: -3, -6, -9 units
-        
+
         commands.spawn((
             PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 0.5, sectors: 16, stacks: 8 })),
+                mesh: meshes.add(Mesh::from(shape::UVSphere {
+                    radius: 0.5,
+                    sectors: 16,
+                    stacks: 8,
+                })),
                 material: materials.add(Color::rgb(0.8, 0.8, 0.2).into()),
                 transform: Transform::from_xyz(x, y, z),
                 ..default()
@@ -349,7 +384,8 @@ fn setup(
                     (i as f32 * 0.5).sin(),
                     (i as f32 * 0.3).cos(),
                     (i as f32 * 0.7).sin(),
-                ).normalize(),
+                )
+                .normalize(),
                 speed: 1.0 + (i % 3) as f32 * 0.5, // Varying speeds
                 change_direction_timer: 0.0,
                 change_direction_interval: 2.0 + (i % 4) as f32 * 1.0, // Varying intervals
@@ -358,26 +394,30 @@ fn setup(
     }
 
     // UI
-    commands.spawn(NodeBundle {
-        style: Style {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            flex_direction: FlexDirection::Row,
-            justify_content: JustifyContent::SpaceBetween,
-            padding: UiRect::all(Val::Px(20.0)),
-            ..default()
-        },
-        ..default()
-    }).with_children(|parent| {
-        // Left side - Main HUD
-        parent.spawn(NodeBundle {
+    commands
+        .spawn(NodeBundle {
             style: Style {
-                flex_direction: FlexDirection::Column,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                padding: UiRect::all(Val::Px(20.0)),
                 ..default()
             },
             ..default()
-        }).with_children(|left_parent| {
-            left_parent.spawn(TextBundle::from_section(
+        })
+        .with_children(|parent| {
+            // Left side - Main HUD
+            parent
+                .spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        ..default()
+                    },
+                    ..default()
+                })
+                .with_children(|left_parent| {
+                    left_parent.spawn(TextBundle::from_section(
                 "Submarine Game\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
                 TextStyle {
                     font_size: 20.0,
@@ -385,121 +425,123 @@ fn setup(
                     ..default()
                 },
             ));
-        });
+                });
 
-        // Right side - Sonar
-        parent.spawn(NodeBundle {
-            style: Style {
-                width: Val::Px(200.0),
-                height: Val::Px(200.0),
-                align_self: AlignSelf::FlexEnd,
-                ..default()
-            },
-            background_color: Color::rgba(0.0, 0.0, 0.0, 0.5).into(),
-            ..default()
-        }).with_children(|sonar_parent| {
-            // Sonar circle (approximated with multiple small squares)
-            for i in 0..360 {
-                let angle = i as f32 * std::f32::consts::PI / 180.0;
-                let radius = 75.0;
-                let x = 100.0 + radius * angle.cos();
-                let y = 100.0 + radius * angle.sin();
-                
-                sonar_parent.spawn(NodeBundle {
+            // Right side - Sonar
+            parent
+                .spawn(NodeBundle {
                     style: Style {
-                        width: Val::Px(2.0),
-                        height: Val::Px(2.0),
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(x - 1.0),
-                        top: Val::Px(y - 1.0),
+                        width: Val::Px(200.0),
+                        height: Val::Px(200.0),
+                        align_self: AlignSelf::FlexEnd,
                         ..default()
                     },
-                    background_color: Color::GREEN.into(),
+                    background_color: Color::rgba(0.0, 0.0, 0.0, 0.5).into(),
                     ..default()
-                });
-            }
+                })
+                .with_children(|sonar_parent| {
+                    // Sonar circle (approximated with multiple small squares)
+                    for i in 0..360 {
+                        let angle = i as f32 * std::f32::consts::PI / 180.0;
+                        let radius = 75.0;
+                        let x = 100.0 + radius * angle.cos();
+                        let y = 100.0 + radius * angle.sin();
 
-            // Vertical cross line
-            sonar_parent.spawn(NodeBundle {
-                style: Style {
-                    width: Val::Px(2.0),
-                    height: Val::Px(150.0),
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(99.0),
-                    top: Val::Px(25.0),
-                    ..default()
-                },
-                background_color: Color::GREEN.into(),
-                ..default()
-            });
+                        sonar_parent.spawn(NodeBundle {
+                            style: Style {
+                                width: Val::Px(2.0),
+                                height: Val::Px(2.0),
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(x - 1.0),
+                                top: Val::Px(y - 1.0),
+                                ..default()
+                            },
+                            background_color: Color::GREEN.into(),
+                            ..default()
+                        });
+                    }
 
-            // Horizontal cross line
-            sonar_parent.spawn(NodeBundle {
-                style: Style {
-                    width: Val::Px(150.0),
-                    height: Val::Px(2.0),
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(25.0),
-                    top: Val::Px(99.0),
-                    ..default()
-                },
-                background_color: Color::GREEN.into(),
-                ..default()
-            });
+                    // Vertical cross line
+                    sonar_parent.spawn(NodeBundle {
+                        style: Style {
+                            width: Val::Px(2.0),
+                            height: Val::Px(150.0),
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(99.0),
+                            top: Val::Px(25.0),
+                            ..default()
+                        },
+                        background_color: Color::GREEN.into(),
+                        ..default()
+                    });
 
-            // Center dot
-            sonar_parent.spawn(NodeBundle {
-                style: Style {
-                    width: Val::Px(6.0),
-                    height: Val::Px(6.0),
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(97.0),
-                    top: Val::Px(97.0),
-                    ..default()
-                },
-                background_color: Color::GREEN.into(),
-                ..default()
-            });
+                    // Horizontal cross line
+                    sonar_parent.spawn(NodeBundle {
+                        style: Style {
+                            width: Val::Px(150.0),
+                            height: Val::Px(2.0),
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(25.0),
+                            top: Val::Px(99.0),
+                            ..default()
+                        },
+                        background_color: Color::GREEN.into(),
+                        ..default()
+                    });
 
-            // Create blip entities for fish detection
-            for _ in 0..10 {
-                sonar_parent.spawn((
-                    NodeBundle {
+                    // Center dot
+                    sonar_parent.spawn(NodeBundle {
                         style: Style {
                             width: Val::Px(6.0),
                             height: Val::Px(6.0),
                             position_type: PositionType::Absolute,
-                            left: Val::Px(0.0),
-                            top: Val::Px(0.0),
+                            left: Val::Px(97.0),
+                            top: Val::Px(97.0),
                             ..default()
                         },
-                        background_color: Color::rgba(0.0, 1.0, 0.0, 0.0).into(), // Transparent initially
+                        background_color: Color::GREEN.into(),
                         ..default()
-                    },
-                    SonarBlip,
-                ));
-            }
+                    });
 
-            // Create sweep line segments for rotating sweep effect
-            for _ in 0..20 {
-                sonar_parent.spawn((
-                    NodeBundle {
-                        style: Style {
-                            width: Val::Px(2.0),
-                            height: Val::Px(2.0),
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(100.0),
-                            top: Val::Px(100.0),
-                            ..default()
-                        },
-                        background_color: Color::rgb(0.0, 1.0, 0.0).into(),
-                        ..default()
-                    },
-                    SonarSweepLine,
-                ));
-            }
+                    // Create blip entities for fish detection
+                    for _ in 0..10 {
+                        sonar_parent.spawn((
+                            NodeBundle {
+                                style: Style {
+                                    width: Val::Px(6.0),
+                                    height: Val::Px(6.0),
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(0.0),
+                                    top: Val::Px(0.0),
+                                    ..default()
+                                },
+                                background_color: Color::rgba(0.0, 1.0, 0.0, 0.0).into(), // Transparent initially
+                                ..default()
+                            },
+                            SonarBlip,
+                        ));
+                    }
+
+                    // Create sweep line segments for rotating sweep effect
+                    for _ in 0..20 {
+                        sonar_parent.spawn((
+                            NodeBundle {
+                                style: Style {
+                                    width: Val::Px(2.0),
+                                    height: Val::Px(2.0),
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(100.0),
+                                    top: Val::Px(100.0),
+                                    ..default()
+                                },
+                                background_color: Color::rgb(0.0, 1.0, 0.0).into(),
+                                ..default()
+                            },
+                            SonarSweepLine,
+                        ));
+                    }
+                });
         });
-    });
 }
 
 fn submarine_movement(
@@ -508,32 +550,46 @@ fn submarine_movement(
     time: Res<Time>,
 ) {
     if let Ok((mut velocity, mut transform)) = submarine_query.get_single_mut() {
-        let mut direction = Vec3::ZERO;
+        let mut move_direction = 0.0;
+        let mut vertical_direction = 0.0;
         let speed = 10.0;
+        let turn_speed = 1.5; // radians/sec
 
+        // Forward/backward in facing direction
         if keyboard_input.pressed(KeyCode::W) {
-            direction.z -= 1.0;
+            move_direction += 1.0;
         }
         if keyboard_input.pressed(KeyCode::S) {
-            direction.z += 1.0;
+            move_direction -= 1.0;
         }
+        // Turn left/right
         if keyboard_input.pressed(KeyCode::A) {
-            direction.x -= 1.0;
+            transform.rotate(Quat::from_rotation_y(turn_speed * time.delta_seconds()));
         }
         if keyboard_input.pressed(KeyCode::D) {
-            direction.x += 1.0;
+            transform.rotate(Quat::from_rotation_y(-turn_speed * time.delta_seconds()));
         }
         // Only allow upward movement if not at the surface
         if keyboard_input.pressed(KeyCode::Space) && transform.translation.y < 0.0 {
-            direction.y += 1.0;
+            vertical_direction += 1.0;
         }
         if keyboard_input.pressed(KeyCode::ShiftLeft) {
-            direction.y -= 1.0;
+            vertical_direction -= 1.0;
         }
 
-        if direction.length() > 0.0 {
-            direction = direction.normalize();
-            velocity.linvel = direction * speed;
+        // Calculate movement in local forward direction
+        let mut local_velocity = Vec3::ZERO;
+        if (move_direction as f32).abs() > 0.0 {
+            // Forward is negative Y after 90-degree X rotation (original Z becomes Y)
+            local_velocity +=
+                transform.rotation * Vec3::new(0.0, -1.0, 0.0) * move_direction * speed;
+        }
+        if (vertical_direction as f32).abs() > 0.0 {
+            local_velocity.y += vertical_direction * speed;
+        }
+
+        if local_velocity.length() > 0.0 {
+            velocity.linvel = local_velocity;
         } else {
             velocity.linvel *= 0.9; // Apply some drag
         }
@@ -567,7 +623,7 @@ fn camera_follow(
             let x = camera_state.distance * camera_state.yaw.sin();
             let y = camera_state.distance * camera_state.pitch.sin() + 5.0;
             let z = camera_state.distance * camera_state.yaw.cos() * camera_state.pitch.cos();
-            
+
             let target_position = submarine_transform.translation + Vec3::new(x, y, z);
             camera_transform.translation = camera_transform.translation.lerp(target_position, 0.1);
             camera_transform.look_at(submarine_transform.translation, Vec3::Y);
@@ -584,7 +640,7 @@ fn mouse_camera_control(
     for event in mouse_motion_events.read() {
         camera_state.yaw -= event.delta.x * sensitivity;
         camera_state.pitch -= event.delta.y * sensitivity;
-        
+
         // Clamp pitch to prevent camera flipping
         camera_state.pitch = camera_state.pitch.clamp(-1.0, 1.0);
     }
@@ -596,40 +652,60 @@ fn fish_movement(
 ) {
     for (mut fish_transform, mut fish_movement) in fish_query.iter_mut() {
         let delta_time = time.delta_seconds();
-        
+
         // Update direction change timer
         fish_movement.change_direction_timer += delta_time;
-        
+
         // Change direction when timer expires
         if fish_movement.change_direction_timer >= fish_movement.change_direction_interval {
             // Generate new random direction with emphasis on lateral movement
-            let random_x = (fish_movement.change_direction_timer * 0.5 + fish_transform.translation.x * 0.1).sin() * 2.0 - 1.0;
-            let random_y = (fish_movement.change_direction_timer * 0.3 + fish_transform.translation.y * 0.2).cos() * 0.5 - 0.25; // Reduced vertical movement
-            let random_z = (fish_movement.change_direction_timer * 0.7 + fish_transform.translation.z * 0.1).sin() * 2.0 - 1.0;
-            
+            let random_x = (fish_movement.change_direction_timer * 0.5
+                + fish_transform.translation.x * 0.1)
+                .sin()
+                * 2.0
+                - 1.0;
+            let random_y = (fish_movement.change_direction_timer * 0.3
+                + fish_transform.translation.y * 0.2)
+                .cos()
+                * 0.5
+                - 0.25; // Reduced vertical movement
+            let random_z = (fish_movement.change_direction_timer * 0.7
+                + fish_transform.translation.z * 0.1)
+                .sin()
+                * 2.0
+                - 1.0;
+
             fish_movement.direction = Vec3::new(random_x, random_y, random_z).normalize();
-            
+
             // Reset timer and set new random interval (more variation)
             fish_movement.change_direction_timer = 0.0;
-            fish_movement.change_direction_interval = 1.5 + (fish_movement.change_direction_timer * 0.2 + fish_transform.translation.x * 0.01).sin() * 2.0;
+            fish_movement.change_direction_interval = 1.5
+                + (fish_movement.change_direction_timer * 0.2
+                    + fish_transform.translation.x * 0.01)
+                    .sin()
+                    * 2.0;
         }
-        
+
         // Add some lateral swaying motion
-        let sway_x = (fish_movement.change_direction_timer * 2.0 + fish_transform.translation.x * 0.1).sin() * 0.3;
-        let sway_z = (fish_movement.change_direction_timer * 1.5 + fish_transform.translation.z * 0.1).cos() * 0.3;
-        
+        let sway_x =
+            (fish_movement.change_direction_timer * 2.0 + fish_transform.translation.x * 0.1).sin()
+                * 0.3;
+        let sway_z =
+            (fish_movement.change_direction_timer * 1.5 + fish_transform.translation.z * 0.1).cos()
+                * 0.3;
+
         // Move fish in current direction with added lateral sway
         let base_movement = fish_movement.direction * fish_movement.speed * delta_time;
         let sway_movement = Vec3::new(sway_x, 0.0, sway_z) * delta_time;
         fish_transform.translation += base_movement + sway_movement;
-        
+
         // Prevent fish from going above the surface (Y > 0)
         if fish_transform.translation.y > 0.0 {
             fish_transform.translation.y = 0.0;
             // Bounce off surface by inverting Y direction
             fish_movement.direction.y = -fish_movement.direction.y.abs();
         }
-        
+
         // Keep fish within reasonable bounds (optional)
         let max_distance = 25.0;
         let distance_from_origin = fish_transform.translation.length();
@@ -661,7 +737,7 @@ fn oxygen_system(
         game_state.oxygen -= time.delta_seconds() * 2.0;
         game_state.oxygen = game_state.oxygen.max(0.0);
     }
-    
+
     // If oxygen runs out, health decreases
     if game_state.oxygen <= 0.0 {
         game_state.health -= time.delta_seconds() * 5.0;
@@ -677,7 +753,9 @@ fn collect_fish(
 ) {
     if let Ok(submarine_transform) = submarine_query.get_single() {
         for (fish_entity, fish_transform) in fish_query.iter() {
-            let distance = submarine_transform.translation.distance(fish_transform.translation);
+            let distance = submarine_transform
+                .translation
+                .distance(fish_transform.translation);
             if distance < 2.0 {
                 commands.entity(fish_entity).despawn();
                 game_state.score += 10;
@@ -693,14 +771,15 @@ fn ui_system(
     mut ui_query: Query<&mut Text>,
 ) {
     if let Ok(mut text) = ui_query.get_single_mut() {
-        let (speed, depth, orientation) = if let Ok((transform, velocity)) = submarine_query.get_single() {
-            let speed = velocity.linvel.length();
-            let depth = -transform.translation.y; // Negative because Y is up in world space
-            let orientation = transform.rotation.to_euler(EulerRot::YXZ);
-            (speed, depth, orientation)
-        } else {
-            (0.0, 0.0, (0.0, 0.0, 0.0))
-        };
+        let (speed, depth, orientation) =
+            if let Ok((transform, velocity)) = submarine_query.get_single() {
+                let speed = velocity.linvel.length();
+                let depth = -transform.translation.y; // Negative because Y is up in world space
+                let orientation = transform.rotation.to_euler(EulerRot::YXZ);
+                (speed, depth, orientation)
+            } else {
+                (0.0, 0.0, (0.0, 0.0, 0.0))
+            };
 
         text.sections[0].value = format!(
             "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nWASD: Move\nSpace: Up\nShift: Down\nCollect fish to score points!",
@@ -716,10 +795,7 @@ fn ui_system(
     }
 }
 
-fn sonar_sweep_system(
-    mut sonar_state: ResMut<SonarState>,
-    time: Res<Time>,
-) {
+fn sonar_sweep_system(mut sonar_state: ResMut<SonarState>, time: Res<Time>) {
     sonar_state.sweep_angle -= time.delta_seconds() * 1.0; // Counter-clockwise rotation to match angle calculations
 }
 
@@ -731,13 +807,13 @@ fn sonar_sweep_update_system(
     let center_y = 100.0;
     let radius = 75.0;
     let num_segments = 20;
-    
+
     // Position each segment along the sweep angle (counter-clockwise)
     for (index, mut style) in sweep_line_query.iter_mut().enumerate() {
         let segment_distance = (index as f32 + 1.0) * (radius / num_segments as f32);
         let segment_x = center_x + segment_distance * (-sonar_state.sweep_angle).cos();
         let segment_y = center_y + segment_distance * (-sonar_state.sweep_angle).sin();
-        
+
         style.left = Val::Px(segment_x - 1.0);
         style.top = Val::Px(segment_y - 1.0);
         style.width = Val::Px(2.0);
@@ -759,7 +835,9 @@ fn sonar_detection_system(
         let detect_window = 0.2; // ~11.5 degrees
 
         // The sweep line is drawn at -sweep_angle, so use that for detection
-        let sweep_angle = ((-sonar_state.sweep_angle) % (2.0 * std::f32::consts::PI) + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI);
+        let sweep_angle = ((-sonar_state.sweep_angle) % (2.0 * std::f32::consts::PI)
+            + 2.0 * std::f32::consts::PI)
+            % (2.0 * std::f32::consts::PI);
 
         // Detect sweep wrap (reset detections)
         let prev_angle = fish_detection_times.last_angle.unwrap_or(sweep_angle);
@@ -774,22 +852,33 @@ fn sonar_detection_system(
         for (entity, fish_transform) in fish_query.iter() {
             let rel = fish_transform.translation - submarine_transform.translation;
             let dist = rel.length();
-            if dist > sonar_range { continue; }
-            let fish_angle = (rel.z.atan2(rel.x) + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI);
+            if dist > sonar_range {
+                continue;
+            }
+            let fish_angle =
+                (rel.z.atan2(rel.x) + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI);
             let horiz_dist = (rel.x * rel.x + rel.z * rel.z).sqrt();
             let vert_angle = rel.y.atan2(horiz_dist);
-            let angle_diff = ((fish_angle - sweep_angle + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI)).min(
-                (sweep_angle - fish_angle + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI)
-            );
+            let angle_diff = ((fish_angle - sweep_angle + 2.0 * std::f32::consts::PI)
+                % (2.0 * std::f32::consts::PI))
+                .min(
+                    (sweep_angle - fish_angle + 2.0 * std::f32::consts::PI)
+                        % (2.0 * std::f32::consts::PI),
+                );
             if angle_diff < detect_window && vert_angle.abs() < 0.5 {
-                if !fish_detection_times.detected_fish_entities.contains(&entity) {
+                if !fish_detection_times
+                    .detected_fish_entities
+                    .contains(&entity)
+                {
                     let sonar_center_x = 100.0;
                     let sonar_center_y = 100.0;
                     let sonar_radius = 75.0;
                     let scaled_dist = (dist / sonar_range) * sonar_radius;
                     let blip_x = sonar_center_x + scaled_dist * fish_angle.cos();
                     let blip_y = sonar_center_y + scaled_dist * fish_angle.sin();
-                    fish_detection_times.detections.push((blip_x, blip_y, sweep_angle));
+                    fish_detection_times
+                        .detections
+                        .push((blip_x, blip_y, sweep_angle));
                     fish_detection_times.detected_fish_entities.insert(entity);
                 }
             }
@@ -798,7 +887,8 @@ fn sonar_detection_system(
         // Fade out blips
         fish_positions.clear();
         fish_detection_times.detections.retain(|(x, y, det_angle)| {
-            let since = (sweep_angle - *det_angle + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI);
+            let since = (sweep_angle - *det_angle + 2.0 * std::f32::consts::PI)
+                % (2.0 * std::f32::consts::PI);
             if since < fade_angle {
                 fish_positions.push((*x, *y));
                 true
@@ -817,7 +907,9 @@ fn sonar_blip_system(
     mut blip_query: Query<(&mut Style, &mut BackgroundColor), With<SonarBlip>>,
 ) {
     let fade_angle = std::f32::consts::PI;
-    let sweep_angle = ((-sonar_state.sweep_angle) % (2.0 * std::f32::consts::PI) + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI);
+    let sweep_angle = ((-sonar_state.sweep_angle) % (2.0 * std::f32::consts::PI)
+        + 2.0 * std::f32::consts::PI)
+        % (2.0 * std::f32::consts::PI);
 
     for (i, (mut style, mut color)) in blip_query.iter_mut().enumerate() {
         if i < sonar_detections.fish_positions.len() {
@@ -826,7 +918,8 @@ fn sonar_blip_system(
             style.top = Val::Px(y - 3.0);
             if i < fish_detection_times.detections.len() {
                 let (_, _, det_angle) = fish_detection_times.detections[i];
-                let since = (sweep_angle - det_angle + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI);
+                let since = (sweep_angle - det_angle + 2.0 * std::f32::consts::PI)
+                    % (2.0 * std::f32::consts::PI);
                 let alpha = 1.0 - (since / fade_angle);
                 *color = Color::rgba(0.0, 1.0, 0.0, alpha.clamp(0.0, 1.0)).into();
             } else {
