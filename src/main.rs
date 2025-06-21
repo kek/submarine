@@ -2,7 +2,18 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_rapier3d::prelude::*;
 use clap::Parser;
-use std::collections::HashSet;
+
+// Constants
+const SONAR_RANGE: f32 = 20.0;
+const SONAR_CENTER_X: f32 = 100.0;
+const SONAR_CENTER_Y: f32 = 100.0;
+const SONAR_RADIUS: f32 = 75.0;
+const SWEEP_SPEED: f32 = 1.0; // radians per second
+const SUBMARINE_MOVE_SPEED: f32 = 10.0;
+const SUBMARINE_ROTATION_SPEED: f32 = 2.0;
+const CAMERA_FOLLOW_SPEED: f32 = 3.0;
+const FISH_COUNT: usize = 20;
+const FISH_COLLECTION_DISTANCE: f32 = 2.0;
 
 #[derive(Parser)]
 #[command(name = "submarine")]
@@ -22,23 +33,6 @@ struct Fish;
 
 #[derive(Component)]
 struct CameraFollow;
-
-#[derive(Component)]
-struct Health {
-    current: f32,
-    max: f32,
-}
-
-#[derive(Component)]
-struct Oxygen {
-    current: f32,
-    max: f32,
-}
-
-#[derive(Component)]
-struct Score {
-    value: u32,
-}
 
 #[derive(Component)]
 struct SonarSweepLine;
@@ -78,19 +72,6 @@ struct SonarState {
 #[derive(Resource)]
 struct SonarDetections {
     fish_positions: Vec<(f32, f32, f32)>, // (x, y, detection_angle) positions on sonar display
-    detection_times: Vec<f32>, // Detection times for each fish (sweep angle when detected)
-}
-
-#[derive(Resource)]
-struct FishDetectionTimes {
-    detections: Vec<(f32, f32, f32)>, // (x, y, detection_angle) for each detected fish
-    detected_fish_entities: HashSet<Entity>, // Track fish entities detected this sweep
-    last_angle: Option<f32>,          // Last detected angle for cycle detection
-}
-
-#[derive(Resource)]
-struct SonarBlipEntities {
-    entities: Vec<Entity>,
 }
 
 impl Default for GameState {
@@ -124,25 +105,6 @@ impl Default for SonarDetections {
     fn default() -> Self {
         Self {
             fish_positions: Vec::new(),
-            detection_times: Vec::new(),
-        }
-    }
-}
-
-impl Default for FishDetectionTimes {
-    fn default() -> Self {
-        Self {
-            detections: Vec::new(),
-            detected_fish_entities: HashSet::new(),
-            last_angle: None,
-        }
-    }
-}
-
-impl Default for SonarBlipEntities {
-    fn default() -> Self {
-        Self {
-            entities: Vec::new(),
         }
     }
 }
@@ -158,8 +120,6 @@ fn main() {
         .init_resource::<CameraState>()
         .init_resource::<SonarState>()
         .init_resource::<SonarDetections>()
-        .init_resource::<FishDetectionTimes>()
-        .init_resource::<SonarBlipEntities>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -186,6 +146,26 @@ fn main() {
     }
 
     app.run();
+}
+
+// Helper functions
+fn normalize_angle(angle: f32) -> f32 {
+    (angle + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI)
+}
+
+fn calculate_fish_angle(local_rel: Vec3) -> f32 {
+    // Calculate angle relative to submarine's forward direction
+    // Forward is negative Z in submarine's local space
+    // Add 90 degrees (π/2) to make forward point to the top of the sonar
+    // Negate local_rel.x to fix left/right inversion
+    normalize_angle((-local_rel.x).atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2)
+}
+
+fn calculate_sonar_position(fish_angle: f32, distance: f32) -> (f32, f32) {
+    let scaled_dist = (distance / SONAR_RANGE) * SONAR_RADIUS;
+    let blip_x = SONAR_CENTER_X + scaled_dist * fish_angle.cos();
+    let blip_y = SONAR_CENTER_Y - scaled_dist * fish_angle.sin(); // Negative to flip Y axis
+    (blip_x, blip_y)
 }
 
 fn setup(
@@ -227,15 +207,6 @@ fn setup(
                 ..default()
             },
             Submarine,
-            Health {
-                current: 100.0,
-                max: 100.0,
-            },
-            Oxygen {
-                current: 100.0,
-                max: 100.0,
-            },
-            Score { value: 0 },
             RigidBody::Dynamic,
             Collider::capsule(Vec3::new(0.0, 0.0, -2.0), Vec3::new(0.0, 0.0, 2.0), 0.7),
             Velocity::zero(),
@@ -355,9 +326,9 @@ fn setup(
         ..default()
     });
 
-    // Spawn 20 fish
-    for i in 0..20 {
-        let angle = (i as f32) * 2.0 * std::f32::consts::PI / 20.0;
+    // Spawn fish
+    for i in 0..FISH_COUNT {
+        let angle = (i as f32) * 2.0 * std::f32::consts::PI / FISH_COUNT as f32;
         let distance = 10.0 + (i as f32) * 2.0; // Vary distance from 10 to 48
         let x = angle.cos() * distance;
         let z = angle.sin() * distance;
@@ -769,7 +740,7 @@ fn collect_fish(
             let distance = submarine_transform
                 .translation
                 .distance(fish_transform.translation);
-            if distance < 2.0 {
+            if distance < FISH_COLLECTION_DISTANCE {
                 commands.entity(fish_entity).despawn();
                 game_state.score += 10;
                 game_state.oxygen = (game_state.oxygen + 20.0).min(100.0);
@@ -806,8 +777,7 @@ fn ui_system(
                 let rel = fish_transform.translation - submarine_transform.translation;
                 // Transform to submarine's local coordinate system
                 let local_rel = submarine_transform.rotation.inverse() * rel;
-                let fish_angle = ((-local_rel.x).atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2 + 2.0 * std::f32::consts::PI) 
-                    % (2.0 * std::f32::consts::PI);
+                let fish_angle = calculate_fish_angle(local_rel);
                 fish_angle.to_degrees()
             } else {
                 0.0
@@ -843,7 +813,7 @@ fn ui_system(
 }
 
 fn sonar_sweep_system(mut sonar_state: ResMut<SonarState>, time: Res<Time>) {
-    sonar_state.sweep_angle -= time.delta_seconds() * 1.0; // Counter-clockwise rotation to match angle calculations
+    sonar_state.sweep_angle -= time.delta_seconds() * SWEEP_SPEED; // Counter-clockwise rotation to match angle calculations
 }
 
 fn sonar_sweep_update_system(
@@ -851,9 +821,6 @@ fn sonar_sweep_update_system(
     submarine_query: Query<&Transform, With<Submarine>>,
     mut sweep_line_query: Query<&mut Style, With<SonarSweepLine>>,
 ) {
-    let center_x = 100.0;
-    let center_y = 100.0;
-    let radius = 75.0;
     let num_segments = 20;
 
     // Get submarine's yaw rotation to make sweep relative to submarine orientation
@@ -866,10 +833,10 @@ fn sonar_sweep_update_system(
     // Position each segment along the sweep angle (clockwise)
     // Make sweep angle relative to submarine's orientation
     for (index, mut style) in sweep_line_query.iter_mut().enumerate() {
-        let segment_distance = (index as f32 + 1.0) * (radius / num_segments as f32);
+        let segment_distance = (index as f32 + 1.0) * (SONAR_RADIUS / num_segments as f32);
         let sweep_angle = sonar_state.sweep_angle + submarine_yaw;
-        let segment_x = center_x + segment_distance * sweep_angle.cos();
-        let segment_y = center_y - segment_distance * sweep_angle.sin(); // Negative to flip Y axis
+        let segment_x = SONAR_CENTER_X + segment_distance * sweep_angle.cos();
+        let segment_y = SONAR_CENTER_Y - segment_distance * sweep_angle.sin(); // Negative to flip Y axis
 
         style.left = Val::Px(segment_x - 1.0);
         style.top = Val::Px(segment_y - 1.0);
@@ -886,15 +853,12 @@ fn sonar_detection_system(
 ) {
     if let Ok(submarine_transform) = submarine_query.get_single() {
         let mut fish_positions = Vec::new();
-        let mut detection_times = Vec::new();
-        let sonar_range = 20.0;
-        let current_sweep_angle = sonar_state.sweep_angle;
 
         // Detect all fish within range
         for (_entity, fish_transform) in fish_query.iter() {
             let rel = fish_transform.translation - submarine_transform.translation;
             let dist = rel.length();
-            if dist > sonar_range {
+            if dist > SONAR_RANGE {
                 continue;
             }
             
@@ -902,28 +866,15 @@ fn sonar_detection_system(
             let local_rel = submarine_transform.rotation.inverse() * rel;
             
             // Calculate angle relative to submarine's forward direction
-            // Forward is negative Z in submarine's local space
-            // Add 90 degrees (π/2) to make forward point to the top of the sonar
-            // Negate local_rel.x to fix left/right inversion
-            let fish_angle = ((-local_rel.x).atan2(-local_rel.z) + std::f32::consts::FRAC_PI_2 + 2.0 * std::f32::consts::PI) 
-                % (2.0 * std::f32::consts::PI);
-            
-            let sonar_center_x = 100.0;
-            let sonar_center_y = 100.0;
-            let sonar_radius = 75.0;
-            let scaled_dist = (dist / sonar_range) * sonar_radius;
+            let fish_angle = calculate_fish_angle(local_rel);
             
             // Convert to sonar display coordinates
-            // Forward (negative Z) should be at the top of the sonar
-            let blip_x = sonar_center_x + scaled_dist * fish_angle.cos();
-            let blip_y = sonar_center_y - scaled_dist * fish_angle.sin(); // Negative to flip Y axis
+            let (blip_x, blip_y) = calculate_sonar_position(fish_angle, dist);
             
             fish_positions.push((blip_x, blip_y, fish_angle));
-            detection_times.push(current_sweep_angle);
         }
         
         sonar_detections.fish_positions = fish_positions;
-        sonar_detections.detection_times = detection_times;
     }
 }
 
@@ -931,7 +882,6 @@ fn sonar_blip_system(
     sonar_detections: Res<SonarDetections>,
     mut blip_query: Query<(&mut Style, &mut BackgroundColor), With<SonarBlip>>,
     sonar_state: Res<SonarState>,
-    time: Res<Time>,
 ) {
     for (i, (mut style, mut color)) in blip_query.iter_mut().enumerate() {
         if i < sonar_detections.fish_positions.len() {
