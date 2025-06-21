@@ -177,7 +177,7 @@ fn setup(
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.8, 0.2, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(-0.9, -2.0, 0.0).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(-0.9, -0.2, 0.0).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ..default()
         });
         
@@ -185,7 +185,7 @@ fn setup(
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.8, 0.2, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(0.9, -2.0, 0.0).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(0.9, -0.2, 0.0).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ..default()
         });
         
@@ -193,7 +193,7 @@ fn setup(
         parent.spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Box::new(0.2, 0.6, 0.4))),
             material: wing_material.clone(),
-            transform: Transform::from_xyz(0.0, -2.0, 0.7).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            transform: Transform::from_xyz(0.0, 2.0, 0.7).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ..default()
         });
     });
@@ -323,7 +323,7 @@ fn mouse_camera_control(
 
     for event in mouse_motion_events.read() {
         camera_state.yaw -= event.delta.x * sensitivity;
-        camera_state.pitch += event.delta.y * sensitivity;
+        camera_state.pitch -= event.delta.y * sensitivity;
         
         // Clamp pitch to prevent camera flipping
         camera_state.pitch = camera_state.pitch.clamp(-1.0, 1.0);
