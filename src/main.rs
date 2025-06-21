@@ -279,7 +279,8 @@ fn submarine_movement(
         if keyboard_input.pressed(KeyCode::D) {
             direction.x += 1.0;
         }
-        if keyboard_input.pressed(KeyCode::Space) {
+        // Only allow upward movement if not at the surface
+        if keyboard_input.pressed(KeyCode::Space) && transform.translation.y < 0.0 {
             direction.y += 1.0;
         }
         if keyboard_input.pressed(KeyCode::ShiftLeft) {
