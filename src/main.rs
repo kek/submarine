@@ -30,6 +30,9 @@ struct Score {
     value: u32,
 }
 
+#[derive(Component)]
+struct SonarSweepLine;
+
 // Resources
 #[derive(Resource)]
 struct GameState {
@@ -43,6 +46,11 @@ struct CameraState {
     distance: f32,
     yaw: f32,
     pitch: f32,
+}
+
+#[derive(Resource)]
+struct SonarState {
+    sweep_angle: f32,
 }
 
 impl Default for GameState {
@@ -65,6 +73,14 @@ impl Default for CameraState {
     }
 }
 
+impl Default for SonarState {
+    fn default() -> Self {
+        Self {
+            sweep_angle: 0.0,
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -72,6 +88,7 @@ fn main() {
         .add_plugins(RapierDebugRenderPlugin::default())
         .init_resource::<GameState>()
         .init_resource::<CameraState>()
+        .init_resource::<SonarState>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
             submarine_movement,
@@ -81,6 +98,8 @@ fn main() {
             oxygen_system,
             collect_fish,
             ui_system,
+            sonar_sweep_system,
+            sonar_sweep_update_system,
         ))
         .run();
 }
@@ -352,6 +371,25 @@ fn setup(
                 background_color: Color::GREEN.into(),
                 ..default()
             });
+
+            // Create a solid-looking sweep line using many small segments
+            for _ in 0..20 {
+                sonar_parent.spawn((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Px(2.0),
+                            height: Val::Px(2.0),
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(100.0),
+                            top: Val::Px(100.0),
+                            ..default()
+                        },
+                        background_color: Color::rgb(0.0, 1.0, 0.0).into(),
+                        ..default()
+                    },
+                    SonarSweepLine,
+                ));
+            }
         });
     });
 }
@@ -536,5 +574,34 @@ fn ui_system(
             orientation.0.to_degrees(),
             orientation.2.to_degrees()
         );
+    }
+}
+
+fn sonar_sweep_system(
+    mut sonar_state: ResMut<SonarState>,
+    time: Res<Time>,
+) {
+    sonar_state.sweep_angle += time.delta_seconds() * 1.0; // Much slower rotation
+}
+
+fn sonar_sweep_update_system(
+    sonar_state: Res<SonarState>,
+    mut sweep_line_query: Query<&mut Style, With<SonarSweepLine>>,
+) {
+    let center_x = 100.0;
+    let center_y = 100.0;
+    let radius = 75.0;
+    let num_segments = 20;
+    
+    // Position each segment along the sweep angle
+    for (index, mut style) in sweep_line_query.iter_mut().enumerate() {
+        let segment_distance = (index as f32 + 1.0) * (radius / num_segments as f32);
+        let segment_x = center_x + segment_distance * sonar_state.sweep_angle.cos();
+        let segment_y = center_y + segment_distance * sonar_state.sweep_angle.sin();
+        
+        style.left = Val::Px(segment_x - 1.0);
+        style.top = Val::Px(segment_y - 1.0);
+        style.width = Val::Px(2.0);
+        style.height = Val::Px(2.0);
     }
 }
