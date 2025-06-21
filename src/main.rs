@@ -88,15 +88,10 @@ fn setup(
         ..default()
     });
 
-    // Submarine
-    commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 1.0, sectors: 32, stacks: 16 })),
-            material: materials.add(StandardMaterial {
-                base_color: Color::rgb(0.3, 0.3, 0.5),
-                ..default()
-            }),
-            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+    // Submarine (simple cylinder with rounded ends)
+    let submarine_entity = commands.spawn((
+        SpatialBundle {
+            transform: Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ..default()
         },
         Submarine,
@@ -104,10 +99,47 @@ fn setup(
         Oxygen { current: 100.0, max: 100.0 },
         Score { value: 0 },
         RigidBody::Dynamic,
-        Collider::ball(1.0),
+        Collider::cylinder(0.7, 2.0),
         Velocity::zero(),
         GravityScale(0.5),
-    ));
+    ))
+    .id();
+
+    // Add child entities for the submarine parts
+    commands.entity(submarine_entity).with_children(|parent| {
+        // Main hull (cylinder)
+        parent.spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::Cylinder { radius: 0.7, height: 4.0, resolution: 32, segments: 1 })),
+            material: materials.add(StandardMaterial {
+                base_color: Color::rgb(0.3, 0.3, 0.5),
+                ..default()
+            }),
+            transform: Transform::IDENTITY,
+            ..default()
+        });
+        
+        // Bow (front sphere)
+        parent.spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 0.7, sectors: 32, stacks: 16 })),
+            material: materials.add(StandardMaterial {
+                base_color: Color::rgb(0.3, 0.3, 0.5),
+                ..default()
+            }),
+            transform: Transform::from_xyz(0.0, 2.0, 0.0),
+            ..default()
+        });
+        
+        // Stern (back sphere)
+        parent.spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::UVSphere { radius: 0.7, sectors: 32, stacks: 16 })),
+            material: materials.add(StandardMaterial {
+                base_color: Color::rgb(0.3, 0.3, 0.5),
+                ..default()
+            }),
+            transform: Transform::from_xyz(0.0, -2.0, 0.0),
+            ..default()
+        });
+    });
 
     // Ocean floor
     commands.spawn((
@@ -172,7 +204,7 @@ fn setup(
 fn submarine_movement(
     keyboard_input: Res<Input<KeyCode>>,
     mut submarine_query: Query<&mut Velocity, With<Submarine>>,
-    time: Res<Time>,
+    _time: Res<Time>,
 ) {
     if let Ok(mut velocity) = submarine_query.get_single_mut() {
         let mut direction = Vec3::ZERO;
