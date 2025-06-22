@@ -11,8 +11,10 @@ const SONAR_RADIUS: f32 = 75.0;
 const SWEEP_SPEED: f32 = 1.0; // radians per second
 const FISH_COUNT: usize = 20;
 const FISH_COLLECTION_DISTANCE: f32 = 2.0;
-const NEUTRAL_BUOYANCY_DEPTH: f32 = -5.0; // Depth where submarine has neutral buoyancy
-const BUOYANCY_FORCE_PER_METER: f32 = 3.0; // Buoyancy force per meter of depth difference
+const BASE_BUOYANCY_FORCE: f32 = 5.0; // Constant upward buoyancy force
+const BALLAST_FILL_RATE: f32 = 0.5; // Ballast fill rate per second
+const BALLAST_DRAIN_RATE: f32 = 0.5; // Ballast drain rate per second
+const BALLAST_BUOYANCY_FORCE: f32 = 15.0; // Buoyancy force per unit of ballast fill
 
 #[derive(Parser)]
 #[command(name = "submarine")]
@@ -73,6 +75,11 @@ struct SonarDetections {
     fish_positions: Vec<(f32, f32, f32)>, // (x, y, detection_angle) positions on sonar display
 }
 
+#[derive(Resource)]
+struct BallastState {
+    fill_level: f32, // 0.0 = empty (buoyant), 1.0 = full (sinks)
+}
+
 impl Default for GameState {
     fn default() -> Self {
         Self {
@@ -108,6 +115,14 @@ impl Default for SonarDetections {
     }
 }
 
+impl Default for BallastState {
+    fn default() -> Self {
+        Self {
+            fill_level: 0.0, // Start with empty ballast tanks (buoyant)
+        }
+    }
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -119,11 +134,13 @@ fn main() {
         .init_resource::<CameraState>()
         .init_resource::<SonarState>()
         .init_resource::<SonarDetections>()
+        .init_resource::<BallastState>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
                 submarine_movement,
+                ballast_control_system,
                 camera_follow,
                 fish_movement,
                 oxygen_system,
@@ -383,7 +400,7 @@ fn setup(
                 .with_children(|parent| {
                     parent.spawn((
                         TextBundle::from_section(
-                            "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nArrow Keys: Camera\nCollect fish to score points!",
+                            "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\nBallast: 0.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nQ: Fill Ballast (Sink)\nE: Empty Ballast (Rise)\nArrow Keys: Camera\nCollect fish to score points!",
                             TextStyle {
                                 font_size: 16.0,
                                 color: Color::WHITE,
@@ -515,6 +532,7 @@ fn submarine_movement(
     keyboard_input: Res<Input<KeyCode>>,
     mut submarine_query: Query<(&mut Velocity, &mut Transform), With<Submarine>>,
     mut camera_state: ResMut<CameraState>,
+    ballast_state: Res<BallastState>,
     time: Res<Time>,
 ) {
     if let Ok((mut velocity, mut transform)) = submarine_query.get_single_mut() {
@@ -568,13 +586,17 @@ fn submarine_movement(
             velocity.linvel *= 0.9; // Apply some drag
         }
 
-        // Apply buoyancy force (depth-dependent, neutral at NEUTRAL_BUOYANCY_DEPTH)
+        // Apply realistic buoyancy force (constant upward force minus ballast weight)
         // Apply to all underwater positions, including at surface (Y <= 0)
         if transform.translation.y <= 0.0 {
-            let depth = -transform.translation.y; // Positive depth below surface
-            let depth_difference = depth - (-NEUTRAL_BUOYANCY_DEPTH); // Difference from neutral depth
-            let buoyancy_force = depth_difference * BUOYANCY_FORCE_PER_METER;
-            velocity.linvel.y += buoyancy_force * time.delta_seconds();
+            // Constant upward buoyancy force (like real physics)
+            let upward_buoyancy = BASE_BUOYANCY_FORCE;
+            
+            // Downward force from ballast tanks (fills with water, making submarine heavier)
+            let ballast_weight = ballast_state.fill_level * BALLAST_BUOYANCY_FORCE;
+            
+            let net_buoyancy_force = upward_buoyancy - ballast_weight;
+            velocity.linvel.y += net_buoyancy_force * time.delta_seconds();
         }
 
         // Prevent submarine from going above the surface (Y > 0)
@@ -747,6 +769,7 @@ fn ui_system(
     sonar_state: Res<SonarState>,
     mut ui_query: Query<&mut Text>,
     sonar_detections: Res<SonarDetections>,
+    ballast_state: Res<BallastState>,
 ) {
     if let Ok(mut text) = ui_query.get_single_mut() {
         let (speed, depth, orientation) =
@@ -786,10 +809,11 @@ fn ui_system(
         };
 
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nArrow Keys: Camera\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Fill Ballast (Sink)\nE: Empty Ballast (Rise)\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
             game_state.oxygen,
+            ballast_state.fill_level * 100.0,
             speed,
             depth,
             orientation.1.to_degrees(),
@@ -808,7 +832,7 @@ fn sonar_sweep_system(mut sonar_state: ResMut<SonarState>, time: Res<Time>) {
 }
 
 fn sonar_sweep_update_system(
-    _sonar_state: Res<SonarState>,
+    sonar_state: Res<SonarState>,
     submarine_query: Query<&Transform, With<Submarine>>,
     mut sweep_line_query: Query<&mut Style, With<SonarSweepLine>>,
 ) {
@@ -883,5 +907,25 @@ fn sonar_blip_system(
         } else {
             *color = Color::rgba(0.0, 1.0, 0.0, 0.0).into(); // Transparent
         }
+    }
+}
+
+fn ballast_control_system(
+    keyboard_input: Res<Input<KeyCode>>,
+    mut ballast_state: ResMut<BallastState>,
+    time: Res<Time>,
+) {
+    let delta_time = time.delta_seconds();
+    
+    // Fill ballast tanks (sink) with Q key
+    if keyboard_input.pressed(KeyCode::Q) {
+        ballast_state.fill_level += BALLAST_FILL_RATE * delta_time;
+        ballast_state.fill_level = ballast_state.fill_level.min(1.0);
+    }
+    
+    // Empty ballast tanks (rise) with E key
+    if keyboard_input.pressed(KeyCode::E) {
+        ballast_state.fill_level -= BALLAST_DRAIN_RATE * delta_time;
+        ballast_state.fill_level = ballast_state.fill_level.max(0.0);
     }
 }
