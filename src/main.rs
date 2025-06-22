@@ -386,7 +386,7 @@ fn setup(
                 .with_children(|parent| {
                     parent.spawn((
                         TextBundle::from_section(
-                            "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
+                            "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nArrow Keys: Camera\nCollect fish to score points!",
                             TextStyle {
                                 font_size: 16.0,
                                 color: Color::WHITE,
@@ -522,7 +522,6 @@ fn submarine_movement(
 ) {
     if let Ok((mut velocity, mut transform)) = submarine_query.get_single_mut() {
         let mut move_direction = 0.0;
-        let mut vertical_direction = 0.0;
         let speed = 10.0;
         let turn_speed = 1.5; // radians/sec
         let camera_rotation_speed = 2.0; // radians/sec
@@ -540,13 +539,6 @@ fn submarine_movement(
         }
         if keyboard_input.pressed(KeyCode::D) {
             transform.rotate(Quat::from_rotation_y(-turn_speed * time.delta_seconds()));
-        }
-        // Only allow upward movement if not at the surface
-        if keyboard_input.pressed(KeyCode::Space) && transform.translation.y < 0.0 {
-            vertical_direction += 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::ShiftLeft) {
-            vertical_direction -= 1.0;
         }
 
         // Camera rotation with arrow keys
@@ -571,9 +563,6 @@ fn submarine_movement(
             // Forward is negative Z in standard Bevy coordinates
             local_velocity +=
                 transform.rotation * Vec3::new(0.0, 0.0, -1.0) * move_direction * speed;
-        }
-        if (vertical_direction as f32).abs() > 0.0 {
-            local_velocity.y += vertical_direction * speed;
         }
 
         if local_velocity.length() > 0.0 {
@@ -800,7 +789,7 @@ fn ui_system(
         };
 
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nSpace: Up\nShift: Down\nArrow Keys: Camera\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
             game_state.oxygen,
