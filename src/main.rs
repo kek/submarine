@@ -14,6 +14,8 @@ const SUBMARINE_ROTATION_SPEED: f32 = 2.0;
 const CAMERA_FOLLOW_SPEED: f32 = 3.0;
 const FISH_COUNT: usize = 20;
 const FISH_COLLECTION_DISTANCE: f32 = 2.0;
+const NEUTRAL_BUOYANCY_DEPTH: f32 = -5.0; // Depth where submarine has neutral buoyancy
+const BUOYANCY_FORCE_PER_METER: f32 = 3.0; // Buoyancy force per meter of depth difference
 
 #[derive(Parser)]
 #[command(name = "submarine")]
@@ -580,9 +582,12 @@ fn submarine_movement(
             velocity.linvel *= 0.9; // Apply some drag
         }
 
-        // Apply buoyancy force (upward force when underwater)
-        if transform.translation.y < 0.0 {
-            let buoyancy_force = 15.0; // Upward force
+        // Apply buoyancy force (depth-dependent, neutral at NEUTRAL_BUOYANCY_DEPTH)
+        // Apply to all underwater positions, including at surface (Y <= 0)
+        if transform.translation.y <= 0.0 {
+            let depth = -transform.translation.y; // Positive depth below surface
+            let depth_difference = depth - (-NEUTRAL_BUOYANCY_DEPTH); // Difference from neutral depth
+            let buoyancy_force = depth_difference * BUOYANCY_FORCE_PER_METER;
             velocity.linvel.y += buoyancy_force * time.delta_seconds();
         }
 
