@@ -12,9 +12,12 @@ const SWEEP_SPEED: f32 = 1.0; // radians per second
 const FISH_COUNT: usize = 20;
 const FISH_COLLECTION_DISTANCE: f32 = 2.0;
 const BASE_BUOYANCY_FORCE: f32 = 5.0; // Constant upward buoyancy force
-const BALLAST_FILL_RATE: f32 = 0.5; // Ballast fill rate per second
-const BALLAST_DRAIN_RATE: f32 = 0.5; // Ballast drain rate per second
+const BALLAST_FILL_RATE: f32 = 0.3; // Ballast fill rate per second when vents open
+const BALLAST_DRAIN_RATE: f32 = 0.4; // Ballast drain rate per second when air is used
 const BALLAST_BUOYANCY_FORCE: f32 = 15.0; // Buoyancy force per unit of ballast fill
+const COMPRESSED_AIR_RATE: f32 = 0.2; // Compressed air generation rate per second
+const COMPRESSOR_POWER_DRAIN: f32 = 0.5; // Power drain per second when compressor is on
+const POWER_RECHARGE_RATE: f32 = 0.1; // Power recharge rate per second
 
 #[derive(Parser)]
 #[command(name = "submarine")]
@@ -78,6 +81,11 @@ struct SonarDetections {
 #[derive(Resource)]
 struct BallastState {
     fill_level: f32, // 0.0 = empty (buoyant), 1.0 = full (sinks)
+    vents_open: bool, // Water flows in when open
+    air_valve_open: bool, // Compressed air flows in when open
+    compressed_air: f32, // Amount of compressed air available (0.0 to 1.0)
+    compressor_on: bool, // Air compressor is running
+    electricity: f32, // Available electricity (0.0 to 100.0)
 }
 
 impl Default for GameState {
@@ -119,6 +127,11 @@ impl Default for BallastState {
     fn default() -> Self {
         Self {
             fill_level: 0.0, // Start with empty ballast tanks (buoyant)
+            vents_open: false,
+            air_valve_open: false,
+            compressed_air: 0.0, // Start with no compressed air
+            compressor_on: false,
+            electricity: 100.0, // Start with full electricity
         }
     }
 }
@@ -400,7 +413,7 @@ fn setup(
                 .with_children(|parent| {
                     parent.spawn((
                         TextBundle::from_section(
-                            "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\nBallast: 0.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nQ: Fill Ballast (Sink)\nE: Empty Ballast (Rise)\nArrow Keys: Camera\nCollect fish to score points!",
+                            "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\nBallast: 0.0%\nCompressed Air: 0.0%\nElectricity: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
                             TextStyle {
                                 font_size: 16.0,
                                 color: Color::WHITE,
@@ -809,11 +822,13 @@ fn ui_system(
         };
 
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Fill Ballast (Sink)\nE: Empty Ballast (Rise)\nArrow Keys: Camera\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}%\nCompressed Air: {:.1}%\nElectricity: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
             game_state.oxygen,
             ballast_state.fill_level * 100.0,
+            ballast_state.compressed_air * 100.0,
+            ballast_state.electricity,
             speed,
             depth,
             orientation.1.to_degrees(),
@@ -864,7 +879,7 @@ fn sonar_detection_system(
     submarine_query: Query<&Transform, With<Submarine>>,
     fish_query: Query<(Entity, &Transform), With<Fish>>,
     mut sonar_detections: ResMut<SonarDetections>,
-    sonar_state: Res<SonarState>,
+    _sonar_state: Res<SonarState>,
 ) {
     if let Ok(submarine_transform) = submarine_query.get_single() {
         let mut fish_positions = Vec::new();
@@ -917,15 +932,57 @@ fn ballast_control_system(
 ) {
     let delta_time = time.delta_seconds();
     
-    // Fill ballast tanks (sink) with Q key
-    if keyboard_input.pressed(KeyCode::Q) {
-        ballast_state.fill_level += BALLAST_FILL_RATE * delta_time;
-        ballast_state.fill_level = ballast_state.fill_level.min(1.0);
+    // Toggle vents (Q key) - allows water to flow into ballast tanks
+    if keyboard_input.just_pressed(KeyCode::Q) {
+        ballast_state.vents_open = !ballast_state.vents_open;
+        // Close air valve when opening vents
+        if ballast_state.vents_open {
+            ballast_state.air_valve_open = false;
+        }
     }
     
-    // Empty ballast tanks (rise) with E key
-    if keyboard_input.pressed(KeyCode::E) {
+    // Toggle air valve (E key) - allows compressed air to flow into tanks
+    if keyboard_input.just_pressed(KeyCode::E) {
+        ballast_state.air_valve_open = !ballast_state.air_valve_open;
+        // Close vents when opening air valve
+        if ballast_state.air_valve_open {
+            ballast_state.vents_open = false;
+        }
+    }
+    
+    // Toggle air compressor (R key) - generates compressed air
+    if keyboard_input.just_pressed(KeyCode::R) {
+        ballast_state.compressor_on = !ballast_state.compressor_on;
+    }
+    
+    // Update compressed air based on compressor
+    if ballast_state.compressor_on && ballast_state.electricity > 0.0 {
+        ballast_state.compressed_air += COMPRESSED_AIR_RATE * delta_time;
+        ballast_state.compressed_air = ballast_state.compressed_air.min(1.0);
+        
+        // Drain electricity
+        ballast_state.electricity -= COMPRESSOR_POWER_DRAIN * delta_time;
+        ballast_state.electricity = ballast_state.electricity.max(0.0);
+    }
+    
+    // Recharge electricity slowly when compressor is off
+    if !ballast_state.compressor_on {
+        ballast_state.electricity += POWER_RECHARGE_RATE * delta_time;
+        ballast_state.electricity = ballast_state.electricity.min(100.0);
+    }
+    
+    // Update ballast fill level based on vents and air valve
+    if ballast_state.vents_open {
+        // Water flows in through vents
+        ballast_state.fill_level += BALLAST_FILL_RATE * delta_time;
+        ballast_state.fill_level = ballast_state.fill_level.min(1.0);
+    } else if ballast_state.air_valve_open && ballast_state.compressed_air > 0.0 {
+        // Compressed air pushes water out
         ballast_state.fill_level -= BALLAST_DRAIN_RATE * delta_time;
         ballast_state.fill_level = ballast_state.fill_level.max(0.0);
+        
+        // Use compressed air
+        ballast_state.compressed_air -= BALLAST_DRAIN_RATE * delta_time * 0.5; // Air is used slower than water
+        ballast_state.compressed_air = ballast_state.compressed_air.max(0.0);
     }
 }
