@@ -9,9 +9,6 @@ const SONAR_CENTER_X: f32 = 100.0;
 const SONAR_CENTER_Y: f32 = 100.0;
 const SONAR_RADIUS: f32 = 75.0;
 const SWEEP_SPEED: f32 = 1.0; // radians per second
-const SUBMARINE_MOVE_SPEED: f32 = 10.0;
-const SUBMARINE_ROTATION_SPEED: f32 = 2.0;
-const CAMERA_FOLLOW_SPEED: f32 = 3.0;
 const FISH_COUNT: usize = 20;
 const FISH_COLLECTION_DISTANCE: f32 = 2.0;
 const NEUTRAL_BUOYANCY_DEPTH: f32 = -5.0; // Depth where submarine has neutral buoyancy
@@ -811,7 +808,7 @@ fn sonar_sweep_system(mut sonar_state: ResMut<SonarState>, time: Res<Time>) {
 }
 
 fn sonar_sweep_update_system(
-    sonar_state: Res<SonarState>,
+    _sonar_state: Res<SonarState>,
     submarine_query: Query<&Transform, With<Submarine>>,
     mut sweep_line_query: Query<&mut Style, With<SonarSweepLine>>,
 ) {
@@ -875,7 +872,7 @@ fn sonar_detection_system(
 fn sonar_blip_system(
     sonar_detections: Res<SonarDetections>,
     mut blip_query: Query<(&mut Style, &mut BackgroundColor), With<SonarBlip>>,
-    sonar_state: Res<SonarState>,
+    _sonar_state: Res<SonarState>,
 ) {
     for (i, (mut style, mut color)) in blip_query.iter_mut().enumerate() {
         if i < sonar_detections.fish_positions.len() {
