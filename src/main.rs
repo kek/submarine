@@ -318,7 +318,7 @@ fn setup(
             subdivisions: 0,
         })),
         material: materials.add(StandardMaterial {
-            base_color: Color::rgba(0.2, 0.4, 0.8, 0.3), // Blue with transparency
+            base_color: Color::rgba(0.2, 0.4, 0.8, 0.1), // Blue with more transparency
             alpha_mode: AlphaMode::Blend,
             ..default()
         }),
