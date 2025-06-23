@@ -830,24 +830,21 @@ fn ui_system(
         };
 
         // Create status indicators for valves and vents
-        let vents_status = if ballast_state.vents_open { "●" } else { "○" };
-        let air_valve_status = if ballast_state.air_valve_open { "●" } else { "○" };
-        let compressor_status = if ballast_state.compressor_on { "●" } else { "○" };
+        let vents_status = if ballast_state.vents_open { "[Vents ON]" } else { "[Vents OFF]" };
+        let air_valve_status = if ballast_state.air_valve_open { "[Valve ON]" } else { "[Valve OFF]" };
+        let compressor_status = if ballast_state.compressor_on { "[Compressor ON]" } else { "[Compressor OFF]" };
 
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}%\nCompressed Air: {:.1}%\nElectricity: {:.1}%\n\nBallast Controls:\nVents: {} {}\nAir Valve: {} {}\nCompressor: {} {}\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}% {}\nCompressed Air: {:.1}% {}\nElectricity: {:.1}% {}\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
             game_state.oxygen,
             ballast_state.fill_level * 100.0,
-            ballast_state.compressed_air * 100.0,
-            ballast_state.electricity,
             vents_status,
-            if ballast_state.vents_open { "OPEN" } else { "CLOSED" },
+            ballast_state.compressed_air * 100.0,
             air_valve_status,
-            if ballast_state.air_valve_open { "OPEN" } else { "CLOSED" },
+            ballast_state.electricity,
             compressor_status,
-            if ballast_state.compressor_on { "ON" } else { "OFF" },
             speed,
             depth,
             orientation.1.to_degrees(),
