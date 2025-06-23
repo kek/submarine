@@ -1,5 +1,8 @@
-use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
+use bevy::{
+    prelude::*,
+    window::PrimaryWindow,
+    render::mesh::VertexAttributeValues,
+};
 use bevy_rapier3d::prelude::*;
 use clap::Parser;
 
@@ -356,16 +359,18 @@ fn setup(
         Collider::cuboid(50.0, 0.1, 50.0),
     ));
 
-    // Water surface
+    // Water surface with realistic waves - single large surface for smooth waves
     commands.spawn((
         PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Plane {
                 size: 100.0,
-                subdivisions: 50, // More subdivisions for better wave effect
+                subdivisions: 100, // High subdivision for smooth wave detail
             })),
             material: materials.add(StandardMaterial {
-                base_color: Color::rgba(0.2, 0.4, 0.8, 0.1), // Blue with more transparency
+                base_color: Color::rgba(0.1, 0.3, 0.6, 0.4),
                 alpha_mode: AlphaMode::Blend,
+                metallic: 0.8,
+                perceptual_roughness: 0.1,
                 ..default()
             }),
             transform: Transform::from_xyz(0.0, 0.0, 0.0),
@@ -1044,22 +1049,47 @@ fn ballast_control_system(
 }
 
 fn wave_system(
-    mut water_query: Query<&mut Transform, With<WaterSurface>>,
+    mut water_query: Query<&mut Handle<Mesh>, With<WaterSurface>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut wave_time: ResMut<WaveTime>,
     time: Res<Time>,
 ) {
     // Update elapsed time
     wave_time.elapsed += time.delta_seconds();
     
-    if let Ok(mut transform) = water_query.get_single_mut() {
-        // Create gentle wave motion
-        let wave_height = 0.3; // Maximum wave height
-        let wave_frequency = 0.5; // Wave frequency (slower = more gentle)
-        
-        // Simple sine wave animation
-        let wave_offset = (wave_time.elapsed * wave_frequency).sin() * wave_height;
-        
-        // Apply wave motion to Y position
-        transform.translation.y = wave_offset;
+    if let Ok(mesh_handle) = water_query.get_single_mut() {
+        if let Some(mesh) = meshes.get_mut(&*mesh_handle) {
+            // Get mesh attributes
+            if let Some(positions) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
+                if let VertexAttributeValues::Float32x3(positions) = positions {
+                    // Create wave deformation by modifying vertex positions
+                    let wave_height = 0.3;
+                    let wave_speed = 1.5;
+                    let target_wavelength = 0.4; // 1/10 of submarine length
+                    let base_frequency = wave_speed / target_wavelength;
+                    
+                    for position in positions.iter_mut() {
+                        let x = position[0];
+                        let z = position[2];
+                        
+                        // Create wave deformation based on position
+                        let time_factor = wave_time.elapsed * base_frequency;
+                        
+                        // Multiple wave patterns for realistic ocean
+                        let wave1 = (x * 8.0 + time_factor).sin() * wave_height * 0.4;
+                        let wave2 = (z * 6.0 - time_factor * 0.7).sin() * wave_height * 0.3;
+                        let wave3 = ((x + z) * 4.0 + time_factor * 1.2).sin() * wave_height * 0.2;
+                        let wave4 = ((x - z) * 3.0 - time_factor * 0.5).sin() * wave_height * 0.1;
+                        
+                        // Apply wave deformation to Y position
+                        position[1] = wave1 + wave2 + wave3 + wave4;
+                    }
+                }
+            }
+            
+            // Update mesh normals for proper lighting
+            mesh.duplicate_vertices();
+            mesh.compute_flat_normals();
+        }
     }
 }
