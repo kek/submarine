@@ -752,7 +752,7 @@ fn oxygen_system(
         game_state.oxygen = game_state.oxygen.min(100.0);
     } else {
         // Below surface - decrease oxygen
-        game_state.oxygen -= time.delta_seconds() * 2.0;
+        game_state.oxygen -= time.delta_seconds() * 0.02;
         game_state.oxygen = game_state.oxygen.max(0.0);
     }
 
@@ -944,9 +944,17 @@ fn sonar_blip_system(
 fn ballast_control_system(
     keyboard_input: Res<Input<KeyCode>>,
     mut ballast_state: ResMut<BallastState>,
+    submarine_query: Query<&Transform, With<Submarine>>,
     time: Res<Time>,
 ) {
     let delta_time = time.delta_seconds();
+    
+    // Get submarine depth
+    let depth = if let Ok(transform) = submarine_query.get_single() {
+        -transform.translation.y // Negative because Y is up in world space
+    } else {
+        0.0
+    };
     
     // Toggle vents (Q key) - allows water to flow into ballast tanks
     if keyboard_input.just_pressed(KeyCode::Q) {
@@ -966,19 +974,27 @@ fn ballast_control_system(
         }
     }
     
-    // Toggle air compressor (R key) - generates compressed air
+    // Toggle air compressor (R key) - generates compressed air (only at surface)
     if keyboard_input.just_pressed(KeyCode::R) {
-        ballast_state.compressor_on = !ballast_state.compressor_on;
+        if depth <= 0.0 {
+            ballast_state.compressor_on = !ballast_state.compressor_on;
+        } else {
+            // Turn off compressor if underwater
+            ballast_state.compressor_on = false;
+        }
     }
     
-    // Update compressed air based on compressor
-    if ballast_state.compressor_on && ballast_state.electricity > 0.0 {
+    // Update compressed air based on compressor (only at surface)
+    if ballast_state.compressor_on && ballast_state.electricity > 0.0 && depth <= 0.0 {
         ballast_state.compressed_air += COMPRESSED_AIR_RATE * delta_time;
         ballast_state.compressed_air = ballast_state.compressed_air.min(1.0);
         
         // Drain electricity
         ballast_state.electricity -= COMPRESSOR_POWER_DRAIN * delta_time;
         ballast_state.electricity = ballast_state.electricity.max(0.0);
+    } else if depth > 0.0 {
+        // Turn off compressor if underwater
+        ballast_state.compressor_on = false;
     }
     
     // Recharge electricity slowly when compressor is off
@@ -1000,5 +1016,10 @@ fn ballast_control_system(
         // Use compressed air
         ballast_state.compressed_air -= BALLAST_DRAIN_RATE * delta_time * 0.5; // Air is used slower than water
         ballast_state.compressed_air = ballast_state.compressed_air.max(0.0);
+        
+        // Turn off air valve when ballast is empty
+        if ballast_state.fill_level <= 0.0 {
+            ballast_state.air_valve_open = false;
+        }
     }
 }
