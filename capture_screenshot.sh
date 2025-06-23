@@ -1,3 +1,68 @@
+#!/bin/bash
+
+# Submarine Game - Screenshot Capture Script
+# This script captures a screenshot of the running game and updates the README
+
+set -e
+
+echo "🚢 Submarine Game Screenshot Capture"
+echo "===================================="
+
+# Check if required tools are available
+if ! command -v screencapture &> /dev/null && ! command -v gnome-screenshot &> /dev/null && ! command -v scrot &> /dev/null; then
+    echo "❌ Error: No screenshot tool found."
+    echo "Please install one of: screencapture (macOS), gnome-screenshot (Linux), or scrot (Linux)"
+    exit 1
+fi
+
+# Create screenshots directory if it doesn't exist
+mkdir -p screenshots
+
+echo "🎮 Starting the submarine game..."
+# Start the game in the background
+cargo run --release &
+GAME_PID=$!
+
+# Wait for the game to start up
+echo "⏳ Waiting for game to load (10 seconds)..."
+sleep 10
+
+# Determine which screenshot tool to use
+if command -v screencapture &> /dev/null; then
+    # macOS
+    echo "📸 Taking screenshot with screencapture (macOS)..."
+    echo "Please focus the game window and press ENTER when ready..."
+    read -p ""
+    screencapture -w screenshots/submarine_game.png
+elif command -v gnome-screenshot &> /dev/null; then
+    # Linux with GNOME
+    echo "📸 Taking screenshot with gnome-screenshot..."
+    echo "Please focus the game window and press ENTER when ready..."
+    read -p ""
+    gnome-screenshot -w -f screenshots/submarine_game.png
+elif command -v scrot &> /dev/null; then
+    # Linux with scrot
+    echo "📸 Taking screenshot with scrot..."
+    echo "Click on the game window to capture it..."
+    scrot -s screenshots/submarine_game.png
+fi
+
+# Stop the game
+echo "🛑 Stopping the game..."
+kill $GAME_PID 2>/dev/null || true
+
+# Check if screenshot was created
+if [ -f "screenshots/submarine_game.png" ]; then
+    echo "✅ Screenshot captured: screenshots/submarine_game.png"
+
+    # Update README with screenshot
+    echo "📝 Updating README.md..."
+
+    # Create backup of current README
+    cp README.md README.md.backup
+
+    # Create new README with screenshot
+    cat > README.md << 'EOF'
 # 3D Submarine Game
 
 ![Submarine Game Screenshot](screenshots/submarine_game.png)
@@ -134,3 +199,24 @@ This project is built for educational and demonstration purposes using the Rust 
 ---
 
 **🚢 Dive into the depths and explore the underwater world! 🌊**
+EOF
+
+    echo "✅ README.md updated with screenshot!"
+    echo ""
+    echo "📁 Files created/updated:"
+    echo "   - screenshots/submarine_game.png (screenshot)"
+    echo "   - README.md (updated with screenshot)"
+    echo "   - README.md.backup (backup of original)"
+    echo ""
+    echo "🎯 The screenshot is now ready for GitHub!"
+    echo "💡 Commit both the screenshot and README to see it on GitHub:"
+    echo "   git add screenshots/submarine_game.png README.md"
+    echo "   git commit -m 'Add game screenshot to README'"
+    echo "   git push"
+
+else
+    echo "❌ Failed to capture screenshot"
+    # Stop the game if still running
+    kill $GAME_PID 2>/dev/null || true
+    exit 1
+fi
