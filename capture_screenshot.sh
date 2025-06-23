@@ -15,6 +15,19 @@ if ! command -v screencapture &> /dev/null && ! command -v gnome-screenshot &> /
     exit 1
 fi
 
+# Check if ImageMagick is available for optimization
+OPTIMIZE_IMAGES=false
+if command -v magick &> /dev/null; then
+    OPTIMIZE_IMAGES=true
+    echo "✨ ImageMagick found - will optimize screenshots"
+elif command -v convert &> /dev/null; then
+    OPTIMIZE_IMAGES=true
+    echo "✨ ImageMagick (legacy) found - will optimize screenshots"
+else
+    echo "⚠️  ImageMagick not found - screenshots will not be optimized"
+    echo "   Install ImageMagick for smaller file sizes: brew install imagemagick"
+fi
+
 # Create screenshots directory if it doesn't exist
 mkdir -p screenshots
 
@@ -54,6 +67,25 @@ kill $GAME_PID 2>/dev/null || true
 # Check if screenshot was created
 if [ -f "screenshots/submarine_game.png" ]; then
     echo "✅ Screenshot captured: screenshots/submarine_game.png"
+
+    # Optimize the screenshot if ImageMagick is available
+    if [ "$OPTIMIZE_IMAGES" = true ]; then
+        echo "🔧 Optimizing screenshot..."
+        original_size=$(du -h screenshots/submarine_game.png | cut -f1)
+
+        # Use appropriate command based on available version
+        if command -v magick &> /dev/null; then
+            magick screenshots/submarine_game.png -resize 1400x866 -quality 90 -strip screenshots/submarine_game_optimized.png
+        else
+            convert screenshots/submarine_game.png -resize 1400x866 -quality 90 -strip screenshots/submarine_game_optimized.png
+        fi
+
+        # Replace original with optimized version
+        mv screenshots/submarine_game_optimized.png screenshots/submarine_game.png
+
+        optimized_size=$(du -h screenshots/submarine_game.png | cut -f1)
+        echo "✅ Screenshot optimized: $original_size → $optimized_size"
+    fi
 
     # Update README with screenshot
     echo "📝 Updating README.md..."
