@@ -412,14 +412,22 @@ fn setup(
                 })
                 .with_children(|parent| {
                     parent.spawn((
-                        TextBundle::from_section(
-                            "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\nBallast: 0.0%\nCompressed Air: 0.0%\nElectricity: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
-                            TextStyle {
-                                font_size: 16.0,
-                                color: Color::WHITE,
-                                font: asset_server.load("fonts/NotoSans-Regular.ttf"),
+                        TextBundle {
+                            text: Text::from_section(
+                                "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\nBallast: 0.0%\nCompressed Air: 0.0%\nElectricity: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
+                                TextStyle {
+                                    font_size: 16.0,
+                                    color: Color::WHITE,
+                                    font: asset_server.load("fonts/NotoSans-Regular.ttf"),
+                                },
+                            ),
+                            style: Style {
+                                height: Val::Auto,
+                                overflow: Overflow::visible(),
+                                ..default()
                             },
-                        ),
+                            ..default()
+                        },
                         UiImage::default(),
                     ));
                 });
@@ -821,14 +829,25 @@ fn ui_system(
             "No fish detected".to_string()
         };
 
+        // Create status indicators for valves and vents
+        let vents_status = if ballast_state.vents_open { "●" } else { "○" };
+        let air_valve_status = if ballast_state.air_valve_open { "●" } else { "○" };
+        let compressor_status = if ballast_state.compressor_on { "●" } else { "○" };
+
         text.sections[0].value = format!(
-            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}%\nCompressed Air: {:.1}%\nElectricity: {:.1}%\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
+            "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}%\nCompressed Air: {:.1}%\nElectricity: {:.1}%\n\nBallast Controls:\nVents: {} {}\nAir Valve: {} {}\nCompressor: {} {}\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
             game_state.oxygen,
             ballast_state.fill_level * 100.0,
             ballast_state.compressed_air * 100.0,
             ballast_state.electricity,
+            vents_status,
+            if ballast_state.vents_open { "OPEN" } else { "CLOSED" },
+            air_valve_status,
+            if ballast_state.air_valve_open { "OPEN" } else { "CLOSED" },
+            compressor_status,
+            if ballast_state.compressor_on { "ON" } else { "OFF" },
             speed,
             depth,
             orientation.1.to_degrees(),
