@@ -129,7 +129,7 @@ impl Default for BallastState {
             fill_level: 0.0, // Start with empty ballast tanks (buoyant)
             vents_open: false,
             air_valve_open: false,
-            compressed_air: 0.0, // Start with no compressed air
+            compressed_air: 1.0, // Start with full compressed air
             compressor_on: false,
             electricity: 100.0, // Start with full electricity
         }
