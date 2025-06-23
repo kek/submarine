@@ -1,8 +1,5 @@
-use bevy::{
-    prelude::*,
-    window::PrimaryWindow,
-    render::mesh::VertexAttributeValues,
-};
+extern crate rand;
+use bevy::{prelude::*, render::mesh::VertexAttributeValues, window::PrimaryWindow};
 use bevy_rapier3d::prelude::*;
 use clap::Parser;
 
@@ -40,6 +37,12 @@ struct Fish;
 
 #[derive(Component)]
 struct CameraFollow;
+
+/// Component for bubble particles
+#[derive(Component)]
+struct Bubble {
+    timer: Timer,
+}
 
 #[derive(Component)]
 struct SonarSweepLine;
@@ -86,12 +89,12 @@ struct SonarDetections {
 
 #[derive(Resource)]
 struct BallastState {
-    fill_level: f32, // 0.0 = empty (buoyant), 1.0 = full (sinks)
-    vents_open: bool, // Water flows in when open
+    fill_level: f32,      // 0.0 = empty (buoyant), 1.0 = full (sinks)
+    vents_open: bool,     // Water flows in when open
     air_valve_open: bool, // Compressed air flows in when open
-    compressed_air: f32, // Amount of compressed air available (0.0 to 1.0)
-    compressor_on: bool, // Air compressor is running
-    electricity: f32, // Available electricity (0.0 to 100.0)
+    compressed_air: f32,  // Amount of compressed air available (0.0 to 1.0)
+    compressor_on: bool,  // Air compressor is running
+    electricity: f32,     // Available electricity (0.0 to 100.0)
 }
 
 #[derive(Resource)]
@@ -182,6 +185,8 @@ fn main() {
                 sonar_detection_system,
                 sonar_blip_system,
                 wave_system,
+                bubble_spawner_system,
+                bubble_animation_system,
             ),
         );
 
@@ -199,6 +204,114 @@ fn main() {
 // Helper functions
 fn normalize_angle(angle: f32) -> f32 {
     (angle + 2.0 * std::f32::consts::PI) % (2.0 * std::f32::consts::PI)
+}
+
+/// Spawns bubbles near the submarine when air is vented (air_valve_open)
+fn bubble_spawner_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    ballast_state: Res<BallastState>,
+    query: Query<&Transform, With<Submarine>>,
+    time: Res<Time>,
+    mut timer: Local<f32>,
+) {
+    // Only spawn bubbles if vents are open and submarine is underwater
+    if ballast_state.vents_open {
+        if let Ok(sub_transform) = query.get_single() {
+            // Only spawn bubbles if submarine is underwater (y < 0) and ballast is not full
+            if sub_transform.translation.y < 0.0 && ballast_state.fill_level < 1.0 {
+                // Use a timer to control bubble spawn rate
+                *timer += time.delta_seconds();
+                let spawn_interval = 0.08; // seconds between bubbles
+                while *timer > spawn_interval {
+                    *timer -= spawn_interval;
+
+                    // Spawn bubble at a random offset near the bottom of the sub
+                    let rng = rand::random::<f32>();
+                    let offset_x = (rand::random::<f32>() - 0.5) * 0.5;
+                    let offset_z = (rand::random::<f32>() - 0.5) * 0.5;
+                    let bubble_pos =
+                        sub_transform.translation + Vec3::new(offset_x, -0.7, offset_z); // slightly below sub
+
+                    let bubble_radius = 0.08 + rng * 0.06;
+                    let bubble_color = Color::rgba(0.8, 0.9, 1.0, 0.45);
+
+                    commands.spawn((
+                        PbrBundle {
+                            mesh: meshes.add(Mesh::from(shape::UVSphere {
+                                radius: bubble_radius,
+                                sectors: 12,
+                                stacks: 8,
+                            })),
+                            material: materials.add(StandardMaterial {
+                                base_color: bubble_color,
+                                alpha_mode: AlphaMode::Blend,
+                                perceptual_roughness: 0.3,
+                                reflectance: 0.1,
+                                ..default()
+                            }),
+                            transform: Transform::from_translation(bubble_pos),
+                            ..default()
+                        },
+                        Bubble {
+                            timer: Timer::from_seconds(1.0 + rng * 0.5, TimerMode::Once),
+                        },
+                    ));
+                }
+            } else {
+                *timer = 0.0;
+            }
+        }
+    } else {
+        *timer = 0.0;
+    }
+}
+
+/// Animates and despawns bubbles as they rise and fade out
+fn bubble_animation_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(
+        Entity,
+        &mut Transform,
+        &Handle<StandardMaterial>,
+        &mut Bubble,
+    )>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mesh_query: Query<&Handle<Mesh>>,
+) {
+    for (entity, mut transform, material_handle, mut bubble) in query.iter_mut() {
+        // Move bubble upward
+        transform.translation.y += 1.7 * time.delta_seconds();
+
+        // Despawn bubble if it reaches the water surface (y >= 0)
+        if transform.translation.y >= 0.0 {
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        // Fade out
+        let remaining = bubble.timer.remaining_secs();
+        let total = bubble.timer.duration().as_secs_f32();
+        let alpha = (remaining / total).clamp(0.0, 1.0);
+
+        // Set alpha on material
+        if let Some(material) = materials.get_mut(material_handle) {
+            material.base_color.set_a(alpha * 0.45);
+        }
+
+        // Shrink slightly (optional, not strictly needed for spheres)
+        // If you want to shrink, uncomment below:
+        // transform.scale *= 0.995;
+
+        // Tick timer and despawn if finished
+        bubble.timer.tick(time.delta());
+        if bubble.timer.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 fn calculate_fish_angle(local_rel: Vec3) -> f32 {
@@ -386,7 +499,7 @@ fn setup(
         let x = angle.cos() * distance;
         let z = angle.sin() * distance;
         let y = -5.0 - (i as f32) * 0.5; // Vary depth
-        
+
         commands.spawn((
             PbrBundle {
                 mesh: meshes.add(Mesh::from(shape::UVSphere {
@@ -636,10 +749,10 @@ fn submarine_movement(
         if transform.translation.y <= 0.0 {
             // Constant upward buoyancy force (like real physics)
             let upward_buoyancy = BASE_BUOYANCY_FORCE;
-            
+
             // Downward force from ballast tanks (fills with water, making submarine heavier)
             let ballast_weight = ballast_state.fill_level * BALLAST_BUOYANCY_FORCE;
-            
+
             let net_buoyancy_force = upward_buoyancy - ballast_weight;
             velocity.linvel.y += net_buoyancy_force * time.delta_seconds();
         }
@@ -665,16 +778,17 @@ fn camera_follow(
         if let Ok(mut camera_transform) = camera_query.get_single_mut() {
             // Get submarine's yaw rotation
             let submarine_yaw = submarine_transform.rotation.to_euler(EulerRot::YXZ).0;
-            
+
             // Update target yaw to follow submarine rotation
             camera_state.target_yaw = submarine_yaw;
-            
+
             // Smoothly interpolate camera yaw towards target yaw (rubber band effect)
             let yaw_lerp_speed = 2.0; // Adjust this for faster/slower camera following
-            let angle_diff = (camera_state.target_yaw - camera_state.yaw + std::f32::consts::PI) 
-                % (2.0 * std::f32::consts::PI) - std::f32::consts::PI;
+            let angle_diff = (camera_state.target_yaw - camera_state.yaw + std::f32::consts::PI)
+                % (2.0 * std::f32::consts::PI)
+                - std::f32::consts::PI;
             camera_state.yaw += angle_diff * yaw_lerp_speed * time.delta_seconds();
-            
+
             // Calculate camera position based on yaw and pitch
             // When yaw=0, pitch=0: camera should be behind submarine (positive Z)
             let x = camera_state.distance * camera_state.yaw.sin();
@@ -831,19 +945,20 @@ fn ui_system(
         let sweep_angle = sonar_state.sweep_angle.to_degrees();
 
         // Calculate fish angle for debugging
-        let fish_angle_deg = if let Ok((submarine_transform, _velocity)) = submarine_query.get_single() {
-            if let Ok(fish_transform) = fish_query.get_single() {
-                let rel = fish_transform.translation - submarine_transform.translation;
-                // Transform to submarine's local coordinate system
-                let local_rel = submarine_transform.rotation.inverse() * rel;
-                let fish_angle = calculate_fish_angle(local_rel);
-                fish_angle.to_degrees()
+        let fish_angle_deg =
+            if let Ok((submarine_transform, _velocity)) = submarine_query.get_single() {
+                if let Ok(fish_transform) = fish_query.get_single() {
+                    let rel = fish_transform.translation - submarine_transform.translation;
+                    // Transform to submarine's local coordinate system
+                    let local_rel = submarine_transform.rotation.inverse() * rel;
+                    let fish_angle = calculate_fish_angle(local_rel);
+                    fish_angle.to_degrees()
+                } else {
+                    0.0
+                }
             } else {
                 0.0
-            }
-        } else {
-            0.0
-        };
+            };
 
         // Debug fading calculations
         let fade_debug = if sonar_detections.fish_positions.len() > 0 {
@@ -854,9 +969,21 @@ fn ui_system(
         };
 
         // Create status indicators for valves and vents
-        let vents_status = if ballast_state.vents_open { "[Vents ON]" } else { "[Vents OFF]" };
-        let air_valve_status = if ballast_state.air_valve_open { "[Valve ON]" } else { "[Valve OFF]" };
-        let compressor_status = if ballast_state.compressor_on { "[Compressor ON]" } else { "[Compressor OFF]" };
+        let vents_status = if ballast_state.vents_open {
+            "[Vents ON]"
+        } else {
+            "[Vents OFF]"
+        };
+        let air_valve_status = if ballast_state.air_valve_open {
+            "[Valve ON]"
+        } else {
+            "[Valve OFF]"
+        };
+        let compressor_status = if ballast_state.compressor_on {
+            "[Compressor ON]"
+        } else {
+            "[Compressor OFF]"
+        };
 
         text.sections[0].value = format!(
             "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}% {}\nCompressed Air: {:.1}% {}\nElectricity: {:.1}% {}\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
@@ -931,19 +1058,19 @@ fn sonar_detection_system(
             if dist > SONAR_RANGE {
                 continue;
             }
-            
+
             // Transform to submarine's local coordinate system
             let local_rel = submarine_transform.rotation.inverse() * rel;
-            
+
             // Calculate angle relative to submarine's forward direction
             let fish_angle = calculate_fish_angle(local_rel);
-            
+
             // Convert to sonar display coordinates
             let (blip_x, blip_y) = calculate_sonar_position(fish_angle, dist);
-            
+
             fish_positions.push((blip_x, blip_y, fish_angle));
         }
-        
+
         sonar_detections.fish_positions = fish_positions;
     }
 }
@@ -972,14 +1099,14 @@ fn ballast_control_system(
     time: Res<Time>,
 ) {
     let delta_time = time.delta_seconds();
-    
+
     // Get submarine depth
     let depth = if let Ok(transform) = submarine_query.get_single() {
         -transform.translation.y // Negative because Y is up in world space
     } else {
         0.0
     };
-    
+
     // Toggle vents (Q key) - allows water to flow into ballast tanks
     if keyboard_input.just_pressed(KeyCode::Q) {
         ballast_state.vents_open = !ballast_state.vents_open;
@@ -988,7 +1115,7 @@ fn ballast_control_system(
             ballast_state.air_valve_open = false;
         }
     }
-    
+
     // Toggle air valve (E key) - allows compressed air to flow into tanks
     if keyboard_input.just_pressed(KeyCode::E) {
         ballast_state.air_valve_open = !ballast_state.air_valve_open;
@@ -997,7 +1124,7 @@ fn ballast_control_system(
             ballast_state.vents_open = false;
         }
     }
-    
+
     // Toggle air compressor (R key) - generates compressed air (only at surface)
     if keyboard_input.just_pressed(KeyCode::R) {
         if depth <= 0.0 {
@@ -1007,12 +1134,12 @@ fn ballast_control_system(
             ballast_state.compressor_on = false;
         }
     }
-    
+
     // Update compressed air based on compressor (only at surface)
     if ballast_state.compressor_on && ballast_state.electricity > 0.0 && depth <= 0.0 {
         ballast_state.compressed_air += COMPRESSED_AIR_RATE * delta_time;
         ballast_state.compressed_air = ballast_state.compressed_air.min(1.0);
-        
+
         // Drain electricity
         ballast_state.electricity -= COMPRESSOR_POWER_DRAIN * delta_time;
         ballast_state.electricity = ballast_state.electricity.max(0.0);
@@ -1020,13 +1147,13 @@ fn ballast_control_system(
         // Turn off compressor if underwater
         ballast_state.compressor_on = false;
     }
-    
+
     // Recharge electricity slowly when compressor is off
     if !ballast_state.compressor_on {
         ballast_state.electricity += POWER_RECHARGE_RATE * delta_time;
         ballast_state.electricity = ballast_state.electricity.min(100.0);
     }
-    
+
     // Update ballast fill level based on vents and air valve
     if ballast_state.vents_open {
         // Water flows in through vents
@@ -1036,11 +1163,11 @@ fn ballast_control_system(
         // Compressed air pushes water out
         ballast_state.fill_level -= BALLAST_DRAIN_RATE * delta_time;
         ballast_state.fill_level = ballast_state.fill_level.max(0.0);
-        
+
         // Use compressed air
         ballast_state.compressed_air -= BALLAST_DRAIN_RATE * delta_time * 0.5; // Air is used slower than water
         ballast_state.compressed_air = ballast_state.compressed_air.max(0.0);
-        
+
         // Turn off air valve when ballast is empty
         if ballast_state.fill_level <= 0.0 {
             ballast_state.air_valve_open = false;
@@ -1056,7 +1183,7 @@ fn wave_system(
 ) {
     // Update elapsed time
     wave_time.elapsed += time.delta_seconds();
-    
+
     if let Ok(mesh_handle) = water_query.get_single_mut() {
         if let Some(mesh) = meshes.get_mut(&*mesh_handle) {
             // Get mesh attributes
@@ -1067,26 +1194,26 @@ fn wave_system(
                     let wave_speed = 1.5;
                     let target_wavelength = 0.4; // 1/10 of submarine length
                     let base_frequency = wave_speed / target_wavelength;
-                    
+
                     for position in positions.iter_mut() {
                         let x = position[0];
                         let z = position[2];
-                        
+
                         // Create wave deformation based on position
                         let time_factor = wave_time.elapsed * base_frequency;
-                        
+
                         // Multiple wave patterns for realistic ocean
                         let wave1 = (x * 8.0 + time_factor).sin() * wave_height * 0.4;
                         let wave2 = (z * 6.0 - time_factor * 0.7).sin() * wave_height * 0.3;
                         let wave3 = ((x + z) * 4.0 + time_factor * 1.2).sin() * wave_height * 0.2;
                         let wave4 = ((x - z) * 3.0 - time_factor * 0.5).sin() * wave_height * 0.1;
-                        
+
                         // Apply wave deformation to Y position
                         position[1] = wave1 + wave2 + wave3 + wave4;
                     }
                 }
             }
-            
+
             // Update mesh normals for proper lighting
             mesh.duplicate_vertices();
             mesh.compute_flat_normals();
