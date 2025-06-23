@@ -45,6 +45,9 @@ struct SonarSweepLine;
 struct SonarBlip;
 
 #[derive(Component)]
+struct WaterSurface;
+
+#[derive(Component)]
 struct FishMovement {
     direction: Vec3,
     speed: f32,
@@ -86,6 +89,11 @@ struct BallastState {
     compressed_air: f32, // Amount of compressed air available (0.0 to 1.0)
     compressor_on: bool, // Air compressor is running
     electricity: f32, // Available electricity (0.0 to 100.0)
+}
+
+#[derive(Resource)]
+struct WaveTime {
+    elapsed: f32,
 }
 
 impl Default for GameState {
@@ -136,6 +144,12 @@ impl Default for BallastState {
     }
 }
 
+impl Default for WaveTime {
+    fn default() -> Self {
+        Self { elapsed: 0.0 }
+    }
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -148,6 +162,7 @@ fn main() {
         .init_resource::<SonarState>()
         .init_resource::<SonarDetections>()
         .init_resource::<BallastState>()
+        .init_resource::<WaveTime>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -163,6 +178,7 @@ fn main() {
                 sonar_sweep_update_system,
                 sonar_detection_system,
                 sonar_blip_system,
+                wave_system,
             ),
         );
 
@@ -341,19 +357,22 @@ fn setup(
     ));
 
     // Water surface
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Plane {
-            size: 100.0,
-            subdivisions: 0,
-        })),
-        material: materials.add(StandardMaterial {
-            base_color: Color::rgba(0.2, 0.4, 0.8, 0.1), // Blue with more transparency
-            alpha_mode: AlphaMode::Blend,
+    commands.spawn((
+        PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::Plane {
+                size: 100.0,
+                subdivisions: 50, // More subdivisions for better wave effect
+            })),
+            material: materials.add(StandardMaterial {
+                base_color: Color::rgba(0.2, 0.4, 0.8, 0.1), // Blue with more transparency
+                alpha_mode: AlphaMode::Blend,
+                ..default()
+            }),
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
             ..default()
-        }),
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-        ..default()
-    });
+        },
+        WaterSurface,
+    ));
 
     // Spawn fish
     for i in 0..FISH_COUNT {
@@ -1021,5 +1040,26 @@ fn ballast_control_system(
         if ballast_state.fill_level <= 0.0 {
             ballast_state.air_valve_open = false;
         }
+    }
+}
+
+fn wave_system(
+    mut water_query: Query<&mut Transform, With<WaterSurface>>,
+    mut wave_time: ResMut<WaveTime>,
+    time: Res<Time>,
+) {
+    // Update elapsed time
+    wave_time.elapsed += time.delta_seconds();
+    
+    if let Ok(mut transform) = water_query.get_single_mut() {
+        // Create gentle wave motion
+        let wave_height = 0.3; // Maximum wave height
+        let wave_frequency = 0.5; // Wave frequency (slower = more gentle)
+        
+        // Simple sine wave animation
+        let wave_offset = (wave_time.elapsed * wave_frequency).sin() * wave_height;
+        
+        // Apply wave motion to Y position
+        transform.translation.y = wave_offset;
     }
 }
