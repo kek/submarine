@@ -187,7 +187,8 @@ fn main() {
                 wave_system,
                 bubble_spawner_system,
                 bubble_animation_system,
-            ),
+            )
+                .chain(),
         );
 
     // Conditionally add debug render plugin based on command line argument
@@ -218,11 +219,11 @@ fn bubble_spawner_system(
 ) {
     // Only spawn bubbles if vents are open and submarine is underwater
     if ballast_state.vents_open {
-        if let Ok(sub_transform) = query.get_single() {
+        if let Ok(sub_transform) = query.single() {
             // Only spawn bubbles if submarine is underwater (y < 0) and ballast is not full
             if sub_transform.translation.y < 0.0 && ballast_state.fill_level < 1.0 {
                 // Use a timer to control bubble spawn rate
-                *timer += time.delta_seconds();
+                *timer += time.delta_secs();
                 let spawn_interval = 0.08; // seconds between bubbles
                 while *timer > spawn_interval {
                     *timer -= spawn_interval;
@@ -235,25 +236,18 @@ fn bubble_spawner_system(
                         sub_transform.translation + Vec3::new(offset_x, -0.7, offset_z); // slightly below sub
 
                     let bubble_radius = 0.08 + rng * 0.06;
-                    let bubble_color = Color::rgba(0.8, 0.9, 1.0, 0.45);
+                    let bubble_color = Color::srgba(0.8, 0.9, 1.0, 0.45);
 
                     commands.spawn((
-                        PbrBundle {
-                            mesh: meshes.add(Mesh::from(shape::UVSphere {
-                                radius: bubble_radius,
-                                sectors: 12,
-                                stacks: 8,
-                            })),
-                            material: materials.add(StandardMaterial {
-                                base_color: bubble_color,
-                                alpha_mode: AlphaMode::Blend,
-                                perceptual_roughness: 0.3,
-                                reflectance: 0.1,
-                                ..default()
-                            }),
-                            transform: Transform::from_translation(bubble_pos),
+                        Mesh3d(meshes.add(Sphere::new(bubble_radius))),
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color: bubble_color,
+                            alpha_mode: AlphaMode::Blend,
+                            perceptual_roughness: 0.3,
+                            reflectance: 0.1,
                             ..default()
-                        },
+                        })),
+                        Transform::from_translation(bubble_pos),
                         Bubble {
                             timer: Timer::from_seconds(1.0 + rng * 0.5, TimerMode::Once),
                         },
@@ -272,39 +266,17 @@ fn bubble_spawner_system(
 fn bubble_animation_system(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(
-        Entity,
-        &mut Transform,
-        &Handle<StandardMaterial>,
-        &mut Bubble,
-    )>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mesh_query: Query<&Handle<Mesh>>,
+    mut query: Query<(Entity, &mut Transform, &mut Bubble)>,
 ) {
-    for (entity, mut transform, material_handle, mut bubble) in query.iter_mut() {
+    for (entity, mut transform, mut bubble) in query.iter_mut() {
         // Move bubble upward
-        transform.translation.y += 1.7 * time.delta_seconds();
+        transform.translation.y += 1.7 * time.delta_secs();
 
         // Despawn bubble if it reaches the water surface (y >= 0)
         if transform.translation.y >= 0.0 {
             commands.entity(entity).despawn();
             continue;
         }
-
-        // Fade out
-        let remaining = bubble.timer.remaining_secs();
-        let total = bubble.timer.duration().as_secs_f32();
-        let alpha = (remaining / total).clamp(0.0, 1.0);
-
-        // Set alpha on material
-        if let Some(material) = materials.get_mut(material_handle) {
-            material.base_color.set_a(alpha * 0.45);
-        }
-
-        // Shrink slightly (optional, not strictly needed for spheres)
-        // If you want to shrink, uncomment below:
-        // transform.scale *= 0.995;
 
         // Tick timer and despawn if finished
         bubble.timer.tick(time.delta());
@@ -337,40 +309,35 @@ fn setup(
     asset_server: Res<AssetServer>,
 ) {
     // Hide mouse cursor
-    if let Ok(mut window) = window_query.get_single_mut() {
-        window.cursor.visible = false;
+    if let Ok(mut window) = window_query.single_mut() {
+        window.cursor_options.visible = false;
     }
 
     // Camera
     commands.spawn((
-        Camera3dBundle {
-            transform: Transform::from_xyz(0.0, 5.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
-            ..default()
-        },
+        Camera3d::default(),
+        Transform::from_xyz(0.0, 5.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
         CameraFollow,
     ));
 
     // Lighting
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
+    commands.spawn((
+        DirectionalLight {
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
+        Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
 
     // Submarine (simple cylinder with rounded ends)
     let submarine_entity = commands
         .spawn((
-            SpatialBundle {
-                transform: Transform::from_xyz(0.0, 0.0, 0.0),
-                ..default()
-            },
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            Visibility::default(),
             Submarine,
             RigidBody::Dynamic,
             Collider::capsule(Vec3::new(0.0, 0.0, -2.0), Vec3::new(0.0, 0.0, 2.0), 0.7),
-            Velocity::zero(),
+            Velocity::default(),
             GravityScale(0.0),
         ))
         .id();
@@ -378,117 +345,93 @@ fn setup(
     // Add child entities for the submarine parts
     commands.entity(submarine_entity).with_children(|parent| {
         // Main hull (cylinder) - now pointing along Z-axis
-        parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cylinder {
-                radius: 0.7,
-                height: 4.0,
-                resolution: 32,
-                segments: 1,
-            })),
-            material: materials.add(StandardMaterial {
-                base_color: Color::rgb(0.3, 0.3, 0.5),
+        parent.spawn((
+            Mesh3d(meshes.add(Cylinder::new(0.7, 4.0))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.3, 0.3, 0.5),
                 ..default()
-            }),
-            transform: Transform::from_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
-            ..default()
-        });
+            })),
+            Transform::from_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+        ));
 
         // Bow (front sphere) - at positive Z
-        parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::UVSphere {
-                radius: 0.7,
-                sectors: 32,
-                stacks: 16,
-            })),
-            material: materials.add(StandardMaterial {
-                base_color: Color::rgb(0.3, 0.3, 0.5),
+        parent.spawn((
+            Mesh3d(meshes.add(Sphere::new(0.7))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.3, 0.3, 0.5),
                 ..default()
-            }),
-            transform: Transform::from_xyz(0.0, 0.0, 2.0),
-            ..default()
-        });
+            })),
+            Transform::from_xyz(0.0, 0.0, 2.0),
+        ));
 
         // Stern (back sphere) - at negative Z
-        parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::UVSphere {
-                radius: 0.7,
-                sectors: 32,
-                stacks: 16,
-            })),
-            material: materials.add(StandardMaterial {
-                base_color: Color::rgb(0.3, 0.3, 0.5),
+        parent.spawn((
+            Mesh3d(meshes.add(Sphere::new(0.7))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.3, 0.3, 0.5),
                 ..default()
-            }),
-            transform: Transform::from_xyz(0.0, 0.0, -2.0),
-            ..default()
-        });
+            })),
+            Transform::from_xyz(0.0, 0.0, -2.0),
+        ));
 
         // Horizontal stabilizers (wings) - at the stern
         let wing_material = materials.add(StandardMaterial {
-            base_color: Color::rgb(0.8, 0.2, 0.2),
+            base_color: Color::srgb(0.8, 0.2, 0.2),
             ..default()
         });
 
         // Left wing
-        parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Box::new(0.8, 0.2, 0.4))),
-            material: wing_material.clone(),
-            transform: Transform::from_xyz(-0.9, 0.0, -0.2),
-            ..default()
-        });
+        parent.spawn((
+            Mesh3d(meshes.add(Cuboid::new(0.8, 0.2, 0.4))),
+            MeshMaterial3d(wing_material.clone()),
+            Transform::from_xyz(-0.9, 0.0, -0.2),
+        ));
 
         // Right wing
-        parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Box::new(0.8, 0.2, 0.4))),
-            material: wing_material.clone(),
-            transform: Transform::from_xyz(0.9, 0.0, -0.2),
-            ..default()
-        });
+        parent.spawn((
+            Mesh3d(meshes.add(Cuboid::new(0.8, 0.2, 0.4))),
+            MeshMaterial3d(wing_material.clone()),
+            Transform::from_xyz(0.9, 0.0, -0.2),
+        ));
 
         // Vertical stabilizer (rudder) - at the stern
-        parent.spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Box::new(0.2, 0.6, 0.4))),
-            material: wing_material.clone(),
-            transform: Transform::from_xyz(0.0, 0.7, -0.2),
-            ..default()
-        });
+        parent.spawn((
+            Mesh3d(meshes.add(Cuboid::new(0.2, 0.6, 0.4))),
+            MeshMaterial3d(wing_material.clone()),
+            Transform::from_xyz(0.0, 0.7, -0.2),
+        ));
     });
 
     // Ocean floor
     commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Plane {
-                size: 100.0,
-                subdivisions: 0,
-            })),
-            material: materials.add(StandardMaterial {
-                base_color: Color::rgb(0.1, 0.2, 0.3),
-                ..default()
-            }),
-            transform: Transform::from_xyz(0.0, -20.0, 0.0),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(100.0, 100.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.8, 0.7, 0.4),
             ..default()
-        },
+        })),
+        Transform::from_xyz(0.0, -10.0, 0.0),
         RigidBody::Fixed,
         Collider::cuboid(50.0, 0.1, 50.0),
     ));
 
     // Water surface with realistic waves - single large surface for smooth waves
     commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Plane {
-                size: 100.0,
-                subdivisions: 100, // High subdivision for smooth wave detail
-            })),
-            material: materials.add(StandardMaterial {
-                base_color: Color::rgba(0.1, 0.3, 0.6, 0.4),
-                alpha_mode: AlphaMode::Blend,
-                metallic: 0.8,
-                perceptual_roughness: 0.1,
-                ..default()
-            }),
-            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+        Mesh3d(
+            meshes.add(
+                Plane3d::default()
+                    .mesh()
+                    .size(100.0, 100.0)
+                    .subdivisions(50),
+            ),
+        ),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgba(0.1, 0.3, 0.6, 0.4),
+            alpha_mode: AlphaMode::Blend,
+            metallic: 0.8,
+            perceptual_roughness: 0.1,
             ..default()
-        },
+        })),
+        Transform::from_xyz(0.0, 0.0, 0.0),
         WaterSurface,
     ));
 
@@ -501,16 +444,12 @@ fn setup(
         let y = -5.0 - (i as f32) * 0.5; // Vary depth
 
         commands.spawn((
-            PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::UVSphere {
-                    radius: 0.5,
-                    sectors: 16,
-                    stacks: 8,
-                })),
-                material: materials.add(Color::rgb(0.8, 0.8, 0.2).into()),
-                transform: Transform::from_xyz(x, y, z),
+            Mesh3d(meshes.add(Sphere::new(0.5))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.8, 0.8, 0.2),
                 ..default()
-            },
+            })),
+            Transform::from_xyz(x, y, z),
             Fish,
             RigidBody::Dynamic,
             Collider::ball(0.5),
@@ -526,8 +465,8 @@ fn setup(
 
     // UI
     commands
-        .spawn(NodeBundle {
-            style: Style {
+        .spawn((
+            Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Row,
@@ -535,52 +474,41 @@ fn setup(
                 padding: UiRect::all(Val::Px(20.0)),
                 ..default()
             },
-            ..default()
-        })
+            BackgroundColor(Color::NONE),
+        ))
         .with_children(|parent| {
             // Left side - Main HUD
             parent
-                .spawn(NodeBundle {
-                    style: Style {
+                .spawn((
+                    Node {
                         flex_direction: FlexDirection::Column,
                         ..default()
                     },
-                    ..default()
-                })
+                    BackgroundColor(Color::NONE),
+                ))
                 .with_children(|parent| {
                     parent.spawn((
-                        TextBundle {
-                            text: Text::from_section(
-                                "Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\nBallast: 0.0%\nCompressed Air: 0.0%\nElectricity: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
-                                TextStyle {
-                                    font_size: 16.0,
-                                    color: Color::WHITE,
-                                    font: asset_server.load("fonts/NotoSans-Regular.ttf"),
-                                },
-                            ),
-                            style: Style {
-                                height: Val::Auto,
-                                overflow: Overflow::visible(),
-                                ..default()
-                            },
+                        Text::new("Submarine Game\n\nScore: 0\nHealth: 100.0%\nOxygen: 100.0%\nBallast: 0.0%\nCompressed Air: 100.0%\nElectricity: 100.0%\n\nSpeed: 0.0 m/s\nDepth: 0.0 m\nPitch: 0.0°\nYaw: 0.0°\nRoll: 0.0°\n\nSonar Debug:\nSub Yaw: 0.0°\nSweep: 0.0°\nFish Angle: 0.0°\nNo fish detected\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!"),
+                        TextFont {
+                            font_size: 16.0,
+                            font: asset_server.load("fonts/NotoSans-Regular.ttf"),
                             ..default()
                         },
-                        UiImage::default(),
+                        TextColor(Color::WHITE),
                     ));
                 });
 
             // Right side - Sonar
             parent
-                .spawn(NodeBundle {
-                    style: Style {
+                .spawn((
+                    Node {
                         width: Val::Px(200.0),
                         height: Val::Px(200.0),
                         align_self: AlignSelf::FlexEnd,
                         ..default()
                     },
-                    background_color: Color::rgba(0.0, 0.0, 0.0, 0.5).into(),
-                    ..default()
-                })
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                ))
                 .with_children(|sonar_parent| {
                     // Sonar circle (approximated with multiple small squares)
                     for i in 0..360 {
@@ -589,23 +517,22 @@ fn setup(
                         let x = 100.0 + radius * angle.cos();
                         let y = 100.0 + radius * angle.sin();
 
-                        sonar_parent.spawn(NodeBundle {
-                            style: Style {
-                                width: Val::Px(2.0),
-                                height: Val::Px(2.0),
+                        sonar_parent.spawn((
+                            Node {
                                 position_type: PositionType::Absolute,
                                 left: Val::Px(x - 1.0),
                                 top: Val::Px(y - 1.0),
+                                width: Val::Px(2.0),
+                                height: Val::Px(2.0),
                                 ..default()
                             },
-                            background_color: Color::GREEN.into(),
-                            ..default()
-                        });
+                            BackgroundColor(Color::srgb(0.0, 0.5, 0.0)),
+                        ));
                     }
 
                     // Vertical cross line
-                    sonar_parent.spawn(NodeBundle {
-                        style: Style {
+                    sonar_parent.spawn((
+                        Node {
                             width: Val::Px(2.0),
                             height: Val::Px(150.0),
                             position_type: PositionType::Absolute,
@@ -613,13 +540,12 @@ fn setup(
                             top: Val::Px(25.0),
                             ..default()
                         },
-                        background_color: Color::GREEN.into(),
-                        ..default()
-                    });
+                        BackgroundColor(Color::srgb(0.0, 1.0, 0.0)),
+                    ));
 
                     // Horizontal cross line
-                    sonar_parent.spawn(NodeBundle {
-                        style: Style {
+                    sonar_parent.spawn((
+                        Node {
                             width: Val::Px(150.0),
                             height: Val::Px(2.0),
                             position_type: PositionType::Absolute,
@@ -627,13 +553,12 @@ fn setup(
                             top: Val::Px(99.0),
                             ..default()
                         },
-                        background_color: Color::GREEN.into(),
-                        ..default()
-                    });
+                        BackgroundColor(Color::srgb(0.0, 1.0, 0.0)),
+                    ));
 
                     // Center dot
-                    sonar_parent.spawn(NodeBundle {
-                        style: Style {
+                    sonar_parent.spawn((
+                        Node {
                             width: Val::Px(6.0),
                             height: Val::Px(6.0),
                             position_type: PositionType::Absolute,
@@ -641,25 +566,21 @@ fn setup(
                             top: Val::Px(97.0),
                             ..default()
                         },
-                        background_color: Color::GREEN.into(),
-                        ..default()
-                    });
+                        BackgroundColor(Color::srgb(0.0, 1.0, 0.0)),
+                    ));
 
                     // Create blip entities for fish detection
                     for _ in 0..10 {
                         sonar_parent.spawn((
-                            NodeBundle {
-                                style: Style {
-                                    width: Val::Px(6.0),
-                                    height: Val::Px(6.0),
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(0.0),
-                                    top: Val::Px(0.0),
-                                    ..default()
-                                },
-                                background_color: Color::rgba(0.0, 1.0, 0.0, 0.0).into(), // Transparent initially
+                            Node {
+                                width: Val::Px(6.0),
+                                height: Val::Px(6.0),
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(0.0),
+                                top: Val::Px(0.0),
                                 ..default()
                             },
+                            BackgroundColor(Color::srgba(0.0, 1.0, 0.0, 0.0)), // Transparent initially
                             SonarBlip,
                         ));
                     }
@@ -667,18 +588,15 @@ fn setup(
                     // Create sweep line segments for rotating sweep effect
                     for _ in 0..20 {
                         sonar_parent.spawn((
-                            NodeBundle {
-                                style: Style {
-                                    width: Val::Px(2.0),
-                                    height: Val::Px(2.0),
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(100.0),
-                                    top: Val::Px(100.0),
-                                    ..default()
-                                },
-                                background_color: Color::rgb(0.0, 1.0, 0.0).into(),
+                            Node {
+                                width: Val::Px(2.0),
+                                height: Val::Px(2.0),
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(100.0),
+                                top: Val::Px(100.0),
                                 ..default()
                             },
+                            BackgroundColor(Color::srgb(0.0, 1.0, 0.0)),
                             SonarSweepLine,
                         ));
                     }
@@ -687,46 +605,46 @@ fn setup(
 }
 
 fn submarine_movement(
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     mut submarine_query: Query<(&mut Velocity, &mut Transform), With<Submarine>>,
     mut camera_state: ResMut<CameraState>,
     ballast_state: Res<BallastState>,
     time: Res<Time>,
 ) {
-    if let Ok((mut velocity, mut transform)) = submarine_query.get_single_mut() {
+    if let Ok((mut velocity, mut transform)) = submarine_query.single_mut() {
         let mut move_direction = 0.0;
         let speed = 10.0;
         let turn_speed = 1.5; // radians/sec
         let camera_rotation_speed = 2.0; // radians/sec
 
         // Forward/backward in facing direction
-        if keyboard_input.pressed(KeyCode::W) {
+        if keyboard_input.pressed(KeyCode::KeyW) {
             move_direction += 1.0;
         }
-        if keyboard_input.pressed(KeyCode::S) {
+        if keyboard_input.pressed(KeyCode::KeyS) {
             move_direction -= 1.0;
         }
         // Turn left/right
-        if keyboard_input.pressed(KeyCode::A) {
-            transform.rotate(Quat::from_rotation_y(turn_speed * time.delta_seconds()));
+        if keyboard_input.pressed(KeyCode::KeyA) {
+            transform.rotate(Quat::from_rotation_y(turn_speed * time.delta_secs()));
         }
-        if keyboard_input.pressed(KeyCode::D) {
-            transform.rotate(Quat::from_rotation_y(-turn_speed * time.delta_seconds()));
+        if keyboard_input.pressed(KeyCode::KeyD) {
+            transform.rotate(Quat::from_rotation_y(-turn_speed * time.delta_secs()));
         }
 
         // Camera rotation with arrow keys
-        if keyboard_input.pressed(KeyCode::Left) {
-            camera_state.yaw -= camera_rotation_speed * time.delta_seconds();
+        if keyboard_input.pressed(KeyCode::ArrowLeft) {
+            camera_state.yaw -= camera_rotation_speed * time.delta_secs();
         }
-        if keyboard_input.pressed(KeyCode::Right) {
-            camera_state.yaw += camera_rotation_speed * time.delta_seconds();
+        if keyboard_input.pressed(KeyCode::ArrowRight) {
+            camera_state.yaw += camera_rotation_speed * time.delta_secs();
         }
-        if keyboard_input.pressed(KeyCode::Up) {
-            camera_state.pitch += camera_rotation_speed * time.delta_seconds();
+        if keyboard_input.pressed(KeyCode::ArrowUp) {
+            camera_state.pitch += camera_rotation_speed * time.delta_secs();
             camera_state.pitch = camera_state.pitch.clamp(-1.0, 1.0);
         }
-        if keyboard_input.pressed(KeyCode::Down) {
-            camera_state.pitch -= camera_rotation_speed * time.delta_seconds();
+        if keyboard_input.pressed(KeyCode::ArrowDown) {
+            camera_state.pitch -= camera_rotation_speed * time.delta_secs();
             camera_state.pitch = camera_state.pitch.clamp(-1.0, 1.0);
         }
 
@@ -754,7 +672,7 @@ fn submarine_movement(
             let ballast_weight = ballast_state.fill_level * BALLAST_BUOYANCY_FORCE;
 
             let net_buoyancy_force = upward_buoyancy - ballast_weight;
-            velocity.linvel.y += net_buoyancy_force * time.delta_seconds();
+            velocity.linvel.y += net_buoyancy_force * time.delta_secs();
         }
 
         // Prevent submarine from going above the surface (Y > 0)
@@ -774,8 +692,8 @@ fn camera_follow(
     mut camera_state: ResMut<CameraState>,
     time: Res<Time>,
 ) {
-    if let Ok(submarine_transform) = submarine_query.get_single() {
-        if let Ok(mut camera_transform) = camera_query.get_single_mut() {
+    if let Ok(submarine_transform) = submarine_query.single() {
+        if let Ok(mut camera_transform) = camera_query.single_mut() {
             // Get submarine's yaw rotation
             let submarine_yaw = submarine_transform.rotation.to_euler(EulerRot::YXZ).0;
 
@@ -787,7 +705,7 @@ fn camera_follow(
             let angle_diff = (camera_state.target_yaw - camera_state.yaw + std::f32::consts::PI)
                 % (2.0 * std::f32::consts::PI)
                 - std::f32::consts::PI;
-            camera_state.yaw += angle_diff * yaw_lerp_speed * time.delta_seconds();
+            camera_state.yaw += angle_diff * yaw_lerp_speed * time.delta_secs();
 
             // Calculate camera position based on yaw and pitch
             // When yaw=0, pitch=0: camera should be behind submarine (positive Z)
@@ -807,7 +725,7 @@ fn fish_movement(
     time: Res<Time>,
 ) {
     for (mut fish_transform, mut fish_movement) in fish_query.iter_mut() {
-        let delta_time = time.delta_seconds();
+        let delta_time = time.delta_secs();
 
         // Update direction change timer
         fish_movement.change_direction_timer += delta_time;
@@ -878,7 +796,7 @@ fn oxygen_system(
     submarine_query: Query<&Transform, With<Submarine>>,
     time: Res<Time>,
 ) {
-    let depth = if let Ok(transform) = submarine_query.get_single() {
+    let depth = if let Ok(transform) = submarine_query.single() {
         -transform.translation.y // Negative because Y is up in world space
     } else {
         0.0
@@ -886,17 +804,17 @@ fn oxygen_system(
 
     if depth <= 0.0 {
         // At or above surface - increase oxygen
-        game_state.oxygen += time.delta_seconds() * 5.0;
+        game_state.oxygen += time.delta_secs() * 5.0;
         game_state.oxygen = game_state.oxygen.min(100.0);
     } else {
         // Below surface - decrease oxygen
-        game_state.oxygen -= time.delta_seconds() * 0.02;
+        game_state.oxygen -= time.delta_secs() * 0.02;
         game_state.oxygen = game_state.oxygen.max(0.0);
     }
 
     // If oxygen runs out, health decreases
     if game_state.oxygen <= 0.0 {
-        game_state.health -= time.delta_seconds() * 5.0;
+        game_state.health -= time.delta_secs() * 5.0;
         game_state.health = game_state.health.max(0.0);
     }
 }
@@ -907,7 +825,7 @@ fn collect_fish(
     fish_query: Query<(Entity, &Transform), With<Fish>>,
     mut game_state: ResMut<GameState>,
 ) {
-    if let Ok(submarine_transform) = submarine_query.get_single() {
+    if let Ok(submarine_transform) = submarine_query.single() {
         for (fish_entity, fish_transform) in fish_query.iter() {
             let distance = submarine_transform
                 .translation
@@ -930,9 +848,9 @@ fn ui_system(
     sonar_detections: Res<SonarDetections>,
     ballast_state: Res<BallastState>,
 ) {
-    if let Ok(mut text) = ui_query.get_single_mut() {
+    if let Ok(mut text) = ui_query.single_mut() {
         let (speed, depth, orientation) =
-            if let Ok((transform, velocity)) = submarine_query.get_single() {
+            if let Ok((transform, velocity)) = submarine_query.single() {
                 let speed = velocity.linvel.length();
                 let depth = -transform.translation.y; // Negative because Y is up in world space
                 let orientation = transform.rotation.to_euler(EulerRot::YXZ);
@@ -945,20 +863,20 @@ fn ui_system(
         let sweep_angle = sonar_state.sweep_angle.to_degrees();
 
         // Calculate fish angle for debugging
-        let fish_angle_deg =
-            if let Ok((submarine_transform, _velocity)) = submarine_query.get_single() {
-                if let Ok(fish_transform) = fish_query.get_single() {
-                    let rel = fish_transform.translation - submarine_transform.translation;
-                    // Transform to submarine's local coordinate system
-                    let local_rel = submarine_transform.rotation.inverse() * rel;
-                    let fish_angle = calculate_fish_angle(local_rel);
-                    fish_angle.to_degrees()
-                } else {
-                    0.0
-                }
+        let fish_angle_deg = if let Ok((submarine_transform, _velocity)) = submarine_query.single()
+        {
+            if let Ok(fish_transform) = fish_query.single() {
+                let rel = fish_transform.translation - submarine_transform.translation;
+                // Transform to submarine's local coordinate system
+                let local_rel = submarine_transform.rotation.inverse() * rel;
+                let fish_angle = calculate_fish_angle(local_rel);
+                fish_angle.to_degrees()
             } else {
                 0.0
-            };
+            }
+        } else {
+            0.0
+        };
 
         // Debug fading calculations
         let fade_debug = if sonar_detections.fish_positions.len() > 0 {
@@ -985,7 +903,7 @@ fn ui_system(
             "[Compressor OFF]"
         };
 
-        text.sections[0].value = format!(
+        **text = format!(
             "Submarine Game\n\nScore: {}\nHealth: {:.1}%\nOxygen: {:.1}%\nBallast: {:.1}% {}\nCompressed Air: {:.1}% {}\nElectricity: {:.1}% {}\n\nSpeed: {:.1} m/s\nDepth: {:.1} m\nPitch: {:.1}°\nYaw: {:.1}°\nRoll: {:.1}°\n\nSonar Debug:\nSub Yaw: {:.1}°\nSweep: {:.1}°\nFish Angle: {:.1}°\n{}\n\nWASD: Move\nQ: Toggle Vents\nE: Toggle Air Valve\nR: Toggle Compressor\nArrow Keys: Camera\nCollect fish to score points!",
             game_state.score,
             game_state.health,
@@ -1010,18 +928,18 @@ fn ui_system(
 }
 
 fn sonar_sweep_system(mut sonar_state: ResMut<SonarState>, time: Res<Time>) {
-    sonar_state.sweep_angle -= time.delta_seconds() * SWEEP_SPEED; // Counter-clockwise rotation to match angle calculations
+    sonar_state.sweep_angle -= time.delta_secs() * SWEEP_SPEED; // Counter-clockwise rotation to match angle calculations
 }
 
 fn sonar_sweep_update_system(
     sonar_state: Res<SonarState>,
     submarine_query: Query<&Transform, With<Submarine>>,
-    mut sweep_line_query: Query<&mut Style, With<SonarSweepLine>>,
+    mut sweep_line_query: Query<&mut Node, With<SonarSweepLine>>,
 ) {
     let num_segments = 20;
 
     // Get submarine's yaw rotation to make sweep relative to submarine orientation
-    let submarine_yaw = if let Ok(submarine_transform) = submarine_query.get_single() {
+    let submarine_yaw = if let Ok(submarine_transform) = submarine_query.single() {
         submarine_transform.rotation.to_euler(EulerRot::YXZ).0
     } else {
         0.0
@@ -1048,7 +966,7 @@ fn sonar_detection_system(
     mut sonar_detections: ResMut<SonarDetections>,
     _sonar_state: Res<SonarState>,
 ) {
-    if let Ok(submarine_transform) = submarine_query.get_single() {
+    if let Ok(submarine_transform) = submarine_query.single() {
         let mut fish_positions = Vec::new();
 
         // Detect all fish within range
@@ -1077,7 +995,7 @@ fn sonar_detection_system(
 
 fn sonar_blip_system(
     sonar_detections: Res<SonarDetections>,
-    mut blip_query: Query<(&mut Style, &mut BackgroundColor), With<SonarBlip>>,
+    mut blip_query: Query<(&mut Node, &mut BackgroundColor), With<SonarBlip>>,
     _sonar_state: Res<SonarState>,
 ) {
     for (i, (mut style, mut color)) in blip_query.iter_mut().enumerate() {
@@ -1085,30 +1003,30 @@ fn sonar_blip_system(
             let (x, y, _fish_angle) = sonar_detections.fish_positions[i];
             style.left = Val::Px(x - 3.0);
             style.top = Val::Px(y - 3.0);
-            *color = Color::rgb(0.0, 1.0, 0.0).into(); // Solid green
+            *color = BackgroundColor(Color::srgb(0.0, 1.0, 0.0)); // Solid green
         } else {
-            *color = Color::rgba(0.0, 1.0, 0.0, 0.0).into(); // Transparent
+            *color = BackgroundColor(Color::srgba(0.0, 1.0, 0.0, 0.0)); // Transparent
         }
     }
 }
 
 fn ballast_control_system(
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     mut ballast_state: ResMut<BallastState>,
     submarine_query: Query<&Transform, With<Submarine>>,
     time: Res<Time>,
 ) {
-    let delta_time = time.delta_seconds();
+    let delta_time = time.delta_secs();
 
     // Get submarine depth
-    let depth = if let Ok(transform) = submarine_query.get_single() {
+    let depth = if let Ok(transform) = submarine_query.single() {
         -transform.translation.y // Negative because Y is up in world space
     } else {
         0.0
     };
 
     // Toggle vents (Q key) - allows water to flow into ballast tanks
-    if keyboard_input.just_pressed(KeyCode::Q) {
+    if keyboard_input.just_pressed(KeyCode::KeyQ) {
         ballast_state.vents_open = !ballast_state.vents_open;
         // Close air valve when opening vents
         if ballast_state.vents_open {
@@ -1117,7 +1035,7 @@ fn ballast_control_system(
     }
 
     // Toggle air valve (E key) - allows compressed air to flow into tanks
-    if keyboard_input.just_pressed(KeyCode::E) {
+    if keyboard_input.just_pressed(KeyCode::KeyE) {
         ballast_state.air_valve_open = !ballast_state.air_valve_open;
         // Close vents when opening air valve
         if ballast_state.air_valve_open {
@@ -1126,7 +1044,7 @@ fn ballast_control_system(
     }
 
     // Toggle air compressor (R key) - generates compressed air (only at surface)
-    if keyboard_input.just_pressed(KeyCode::R) {
+    if keyboard_input.just_pressed(KeyCode::KeyR) {
         if depth <= 0.0 {
             ballast_state.compressor_on = !ballast_state.compressor_on;
         } else {
@@ -1176,16 +1094,16 @@ fn ballast_control_system(
 }
 
 fn wave_system(
-    mut water_query: Query<&mut Handle<Mesh>, With<WaterSurface>>,
+    water_query: Query<&Mesh3d, With<WaterSurface>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut wave_time: ResMut<WaveTime>,
     time: Res<Time>,
 ) {
     // Update elapsed time
-    wave_time.elapsed += time.delta_seconds();
+    wave_time.elapsed += time.delta_secs();
 
-    if let Ok(mesh_handle) = water_query.get_single_mut() {
-        if let Some(mesh) = meshes.get_mut(&*mesh_handle) {
+    if let Ok(mesh_handle) = water_query.single() {
+        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
             // Get mesh attributes
             if let Some(positions) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
                 if let VertexAttributeValues::Float32x3(positions) = positions {
