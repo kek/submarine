@@ -15,7 +15,7 @@ A 3D submarine exploration game built with Rust and Bevy game engine featuring r
 - **🐟 Fish Collection**: Collect fish to earn points and restore oxygen
 - **🫁 Oxygen Management**: Manage your oxygen levels underwater
 - **📡 Sonar System**: Active sonar with rotating sweep and fish detection
-- **🌊 Expansive Ocean Environment**: Vast underwater world with realistic wave effects and distant horizons
+- **🏔️ Realistic Mountain-Bounded Lake Environment**: Vast underwater world surrounded by natural cone-shaped mountain ranges with realistic wave effects
 - **⚡ Resource Management**: Electricity, compressed air, and ballast levels
 
 ## 🎮 Controls
@@ -47,7 +47,10 @@ A 3D submarine exploration game built with Rust and Bevy game engine featuring r
 - **Buoyancy**: Constant upward force based on ballast level
 - **Surface Operations**: Compressor only works at surface (Y ≤ 0)
 - **Bubble Physics**: Bubbles only appear underwater and disappear at surface
-- **Expansive World**: Large ocean environment (800x800 units) with fish distributed across multiple zones
+- **Natural Cone Mountains**: Realistic cone-shaped peaks extending from sea floor to towering heights (50-160 units)
+- **Mountain Clusters**: Natural peak groupings with satellite summits for authentic mountain range appearance
+- **Layered Terrain**: Sea floor (-20 units) → underwater rocks → cone foothills → major peaks → tall mountain clusters
+- **Expansive Lake**: Large crater lake environment (1200x1200 water surface) completely enclosed by mountain barriers
 - **Extended Sonar Range**: 50-unit detection range for exploring the vast underwater world
 
 ## 🚀 Installation & Running

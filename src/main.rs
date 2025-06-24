@@ -54,6 +54,15 @@ struct SonarBlip;
 struct WaterSurface;
 
 #[derive(Component)]
+struct Mountain;
+
+#[derive(Component)]
+struct Foothill;
+
+#[derive(Component)]
+struct UnderwaterRock;
+
+#[derive(Component)]
 struct FishMovement {
     direction: Vec3,
     speed: f32,
@@ -320,21 +329,21 @@ fn setup(
         CameraFollow,
     ));
 
-    // Lighting with softer underwater ambiance
+    // Lighting with softer underwater ambiance - no shadows to avoid falloff
     commands.spawn((
         DirectionalLight {
-            shadows_enabled: true,
-            illuminance: 8000.0,
+            shadows_enabled: false,
+            illuminance: 20000.0,
             color: Color::srgb(0.9, 0.95, 1.0),
             ..default()
         },
         Transform::from_xyz(4.0, 15.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    // Add ambient light for better underwater visibility
+    // Add much brighter ambient light for consistent visibility at all distances
     commands.insert_resource(AmbientLight {
-        color: Color::srgb(0.4, 0.6, 0.8),
-        brightness: 150.0,
+        color: Color::srgb(0.6, 0.7, 0.9),
+        brightness: 2000.0,
         affects_lightmapped_meshes: false,
     });
 
@@ -411,40 +420,178 @@ fn setup(
         ));
     });
 
-    // Ocean floor - larger than water surface and darker to prevent visibility
+    // Ocean floor - exactly same size as water surface
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(1500.0, 1500.0))),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(1800.0, 1800.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.1, 0.1, 0.15),
+            base_color: Color::srgb(0.6, 0.5, 0.3),
+            perceptual_roughness: 0.9,
+            metallic: 0.0,
+            reflectance: 0.02,
             ..default()
         })),
-        Transform::from_xyz(0.0, -20.0, 0.0),
+        Transform::from_xyz(0.0, -20.5, 0.0),
         RigidBody::Fixed,
-        Collider::cuboid(750.0, 0.1, 750.0),
+        Collider::cuboid(900.0, 0.1, 900.0),
     ));
 
-    // Water surface with realistic waves - expanded to eliminate visible edges
+    // Create circular mountain range boundary
+    let mountain_radius = 550.0;
+    let mountain_count = 36;
+    let mountain_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.5, 0.4, 0.3),
+        perceptual_roughness: 0.9,
+        metallic: 0.0,
+        reflectance: 0.02,
+        ..default()
+    });
+
+    for i in 0..mountain_count {
+        let angle = (i as f32) * 2.0 * std::f32::consts::PI / mountain_count as f32;
+        let radius_variation = (rand::random::<f32>() - 0.5) * 50.0;
+        let radius = mountain_radius + radius_variation;
+
+        let x = angle.cos() * radius;
+        let z = angle.sin() * radius;
+        let height = 50.0 + rand::random::<f32>() * 40.0; // Mountains 50-90 units tall
+        let base_radius = 25.0 + rand::random::<f32>() * 15.0; // Base radius variation
+
+        commands.spawn((
+            Mesh3d(meshes.add(Cone::new(base_radius, height))),
+            MeshMaterial3d(mountain_material.clone()),
+            Transform::from_xyz(x, height / 2.0 - 20.5, z), // Base below sea floor level
+            RigidBody::Fixed,
+            Collider::cylinder(height / 2.0, base_radius * 0.5),
+            Mountain,
+        ));
+    }
+
+    // Add some taller peaks for visual variety
+    for i in 0..12 {
+        let angle = (i as f32) * 2.0 * std::f32::consts::PI / 12.0;
+        let radius = mountain_radius + (rand::random::<f32>() - 0.5) * 80.0;
+
+        let x = angle.cos() * radius;
+        let z = angle.sin() * radius;
+        let height = 100.0 + rand::random::<f32>() * 60.0; // Tall peaks 100-160 units
+        let base_radius = 35.0 + rand::random::<f32>() * 20.0;
+
+        commands.spawn((
+            Mesh3d(meshes.add(Cone::new(base_radius, height))),
+            MeshMaterial3d(mountain_material.clone()),
+            Transform::from_xyz(x, height / 2.0 - 20.5, z), // Base below sea floor level
+            RigidBody::Fixed,
+            Collider::cylinder(height / 2.0, base_radius * 0.4),
+            Mountain,
+        ));
+
+        // Add smaller satellite peaks around major peaks for clusters
+        let cluster_count = 2 + (rand::random::<f32>() * 3.0) as i32;
+        for _ in 0..cluster_count {
+            let offset_angle = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
+            let offset_distance = 30.0 + rand::random::<f32>() * 40.0;
+            let cluster_x = x + offset_angle.cos() * offset_distance;
+            let cluster_z = z + offset_angle.sin() * offset_distance;
+            let cluster_height = 20.0 + rand::random::<f32>() * 40.0;
+            let cluster_radius = 15.0 + rand::random::<f32>() * 10.0;
+
+            commands.spawn((
+                Mesh3d(meshes.add(Cone::new(cluster_radius, cluster_height))),
+                MeshMaterial3d(mountain_material.clone()),
+                Transform::from_xyz(cluster_x, cluster_height / 2.0 - 20.5, cluster_z),
+                RigidBody::Fixed,
+                Collider::cylinder(cluster_height / 2.0, cluster_radius * 0.5),
+                Mountain,
+            ));
+        }
+    }
+
+    // Add foothills and underwater rocks for natural transition
+    let foothill_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.35, 0.3, 0.2),
+        perceptual_roughness: 0.95,
+        metallic: 0.0,
+        reflectance: 0.02,
+        ..default()
+    });
+
+    // Inner ring of foothills (smaller cone mountains)
+    for i in 0..60 {
+        let angle = (i as f32) * 2.0 * std::f32::consts::PI / 60.0;
+        let radius = 450.0 + (rand::random::<f32>() - 0.5) * 100.0;
+
+        let x = angle.cos() * radius;
+        let z = angle.sin() * radius;
+        let height = 15.0 + rand::random::<f32>() * 25.0; // Foothills 15-40 units tall
+        let base_radius = 12.0 + rand::random::<f32>() * 8.0;
+
+        commands.spawn((
+            Mesh3d(meshes.add(Cone::new(base_radius, height))),
+            MeshMaterial3d(foothill_material.clone()),
+            Transform::from_xyz(x, height / 2.0 - 20.5, z), // Base below sea floor
+            RigidBody::Fixed,
+            Collider::cylinder(height / 2.0, base_radius * 0.6),
+            Foothill,
+        ));
+    }
+
+    // Underwater rocks scattered around the edges (irregular cuboid shapes)
+    let rock_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.4, 0.35, 0.3),
+        perceptual_roughness: 0.95,
+        metallic: 0.0,
+        reflectance: 0.02,
+        ..default()
+    });
+
+    for _i in 0..40 {
+        let angle = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
+        let radius = 350.0 + rand::random::<f32>() * 150.0;
+
+        let x = angle.cos() * radius;
+        let z = angle.sin() * radius;
+        let width = 1.0 + rand::random::<f32>() * 3.0;
+        let height = 1.0 + rand::random::<f32>() * 4.0;
+        let depth = 1.0 + rand::random::<f32>() * 3.0;
+
+        // Use irregular cuboids for clearly distinct rock shapes
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(width, height, depth))),
+            MeshMaterial3d(rock_material.clone()),
+            Transform::from_xyz(x, -20.5 + height / 2.0, z).with_rotation(Quat::from_euler(
+                EulerRot::XYZ,
+                rand::random::<f32>() * 0.5,
+                rand::random::<f32>() * std::f32::consts::TAU,
+                rand::random::<f32>() * 0.5,
+            )),
+            RigidBody::Fixed,
+            Collider::cuboid(width / 2.0, height / 2.0, depth / 2.0),
+            UnderwaterRock,
+        ));
+    }
+
+    // Water surface with realistic waves - re-enabled with better lighting
     commands.spawn((
         Mesh3d(
             meshes.add(
                 Plane3d::default()
                     .mesh()
-                    .size(1200.0, 1200.0)
+                    .size(2000.0, 2000.0)
                     .subdivisions(120),
             ),
         ),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.05, 0.25, 0.5, 0.85),
+            base_color: Color::srgba(0.1, 0.3, 0.6, 0.7),
             alpha_mode: AlphaMode::Blend,
             metallic: 0.0,
             perceptual_roughness: 0.02,
             reflectance: 0.04,
             ior: 1.33, // Water's index of refraction
-            specular_transmission: 0.95,
+            specular_transmission: 0.9,
             thickness: 1.0,
             ..default()
         })),
-        Transform::from_xyz(0.0, 0.0, 0.0),
+        Transform::from_xyz(0.0, -0.1, 0.0),
         WaterSurface,
     ));
 
@@ -803,13 +950,13 @@ fn fish_movement(
             fish_movement.direction.y = -fish_movement.direction.y.abs();
         }
 
-        // Keep fish within expanded bounds
-        let max_distance = 200.0;
+        // Keep fish within mountain boundary (lake/ocean bounds)
+        let max_distance = 400.0; // Stay well within mountain ring at ~550 units
         let distance_from_origin = fish_transform.translation.length();
         if distance_from_origin > max_distance {
-            // Move fish back towards origin
+            // Move fish back towards center
             let direction_to_origin = -fish_transform.translation.normalize();
-            fish_transform.translation += direction_to_origin * delta_time * 2.0;
+            fish_transform.translation += direction_to_origin * delta_time * 3.0;
         }
 
         // Also prevent fish from going too deep
