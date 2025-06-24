@@ -63,6 +63,9 @@ struct Foothill;
 struct UnderwaterRock;
 
 #[derive(Component)]
+struct DepthLighting;
+
+#[derive(Component)]
 struct FishMovement {
     direction: Vec3,
     speed: f32,
@@ -196,6 +199,7 @@ fn main() {
                 wave_system,
                 bubble_spawner_system,
                 bubble_animation_system,
+                depth_lighting_system,
             )
                 .chain(),
         );
@@ -333,17 +337,18 @@ fn setup(
     commands.spawn((
         DirectionalLight {
             shadows_enabled: false,
-            illuminance: 20000.0,
-            color: Color::srgb(0.9, 0.95, 1.0),
+            illuminance: 12000.0,
+            color: Color::srgb(0.7, 0.8, 0.9),
             ..default()
         },
-        Transform::from_xyz(4.0, 15.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(4.0, 15.0, 4.4).looking_at(Vec3::ZERO, Vec3::Y),
+        DepthLighting,
     ));
 
-    // Add much brighter ambient light for consistent visibility at all distances
+    // Add underwater-appropriate ambient light
     commands.insert_resource(AmbientLight {
-        color: Color::srgb(0.6, 0.7, 0.9),
-        brightness: 2000.0,
+        color: Color::srgb(0.3, 0.5, 0.7),
+        brightness: 800.0,
         affects_lightmapped_meshes: false,
     });
 
@@ -581,14 +586,15 @@ fn setup(
             ),
         ),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.1, 0.3, 0.6, 0.7),
+            base_color: Color::srgba(0.05, 0.2, 0.4, 0.85),
             alpha_mode: AlphaMode::Blend,
-            metallic: 0.0,
-            perceptual_roughness: 0.02,
-            reflectance: 0.04,
+            metallic: 0.1,
+            perceptual_roughness: 0.1,
+            reflectance: 0.08,
             ior: 1.33, // Water's index of refraction
-            specular_transmission: 0.9,
-            thickness: 1.0,
+            specular_transmission: 0.6,
+            thickness: 3.0,
+            cull_mode: None, // Make water surface visible from both sides
             ..default()
         })),
         Transform::from_xyz(0.0, -0.1, 0.0),
@@ -1311,6 +1317,44 @@ fn wave_system(
             // Update mesh normals for proper lighting
             mesh.duplicate_vertices();
             mesh.compute_flat_normals();
+        }
+    }
+}
+
+fn depth_lighting_system(
+    camera_query: Query<&Transform, With<CameraFollow>>,
+    mut light_query: Query<&mut DirectionalLight, With<DepthLighting>>,
+    mut ambient_light: ResMut<AmbientLight>,
+) {
+    if let Ok(camera_transform) = camera_query.single() {
+        let depth = -camera_transform.translation.y; // Depth below surface based on camera position
+
+        // Calculate lighting factors based on depth
+        let underwater_factor = (depth / 10.0).clamp(0.0, 1.0); // Underwater adaptation (0-10 depth)
+
+        // Adjust directional light
+        if let Ok(mut directional_light) = light_query.single_mut() {
+            // Reduce directional light intensity underwater
+            directional_light.illuminance = 12000.0 * (1.0 - underwater_factor * 0.5);
+
+            // Shift color more blue underwater
+            if depth > 2.0 {
+                directional_light.color = Color::srgb(0.4, 0.6, 0.9);
+            } else {
+                directional_light.color = Color::srgb(0.7, 0.8, 0.9);
+            }
+        }
+
+        // Adjust ambient light for underwater
+        let base_brightness = 800.0;
+        let underwater_boost = 300.0 * underwater_factor; // More ambient light underwater
+        ambient_light.brightness = base_brightness + underwater_boost;
+
+        // Ambient color shifts blue underwater
+        if depth > 2.0 {
+            ambient_light.color = Color::srgb(0.2, 0.4, 0.8);
+        } else {
+            ambient_light.color = Color::srgb(0.3, 0.5, 0.7);
         }
     }
 }
