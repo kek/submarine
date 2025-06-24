@@ -4,12 +4,12 @@ use bevy_rapier3d::prelude::*;
 use clap::Parser;
 
 // Constants
-const SONAR_RANGE: f32 = 20.0;
+const SONAR_RANGE: f32 = 50.0;
 const SONAR_CENTER_X: f32 = 100.0;
 const SONAR_CENTER_Y: f32 = 100.0;
 const SONAR_RADIUS: f32 = 75.0;
 const SWEEP_SPEED: f32 = 1.0; // radians per second
-const FISH_COUNT: usize = 20;
+const FISH_COUNT: usize = 80;
 const FISH_COLLECTION_DISTANCE: f32 = 2.0;
 const BASE_BUOYANCY_FORCE: f32 = 5.0; // Constant upward buoyancy force
 const BALLAST_FILL_RATE: f32 = 0.3; // Ballast fill rate per second when vents open
@@ -115,7 +115,7 @@ impl Default for GameState {
 impl Default for CameraState {
     fn default() -> Self {
         Self {
-            distance: 15.0,
+            distance: 25.0,
             yaw: 0.0,
             pitch: 0.0,
             target_yaw: 0.0,
@@ -316,18 +316,27 @@ fn setup(
     // Camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 5.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(0.0, 8.0, 25.0).looking_at(Vec3::ZERO, Vec3::Y),
         CameraFollow,
     ));
 
-    // Lighting
+    // Lighting with softer underwater ambiance
     commands.spawn((
         DirectionalLight {
             shadows_enabled: true,
+            illuminance: 8000.0,
+            color: Color::srgb(0.9, 0.95, 1.0),
             ..default()
         },
-        Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(4.0, 15.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+
+    // Add ambient light for better underwater visibility
+    commands.insert_resource(AmbientLight {
+        color: Color::srgb(0.4, 0.6, 0.8),
+        brightness: 150.0,
+        affects_lightmapped_meshes: false,
+    });
 
     // Submarine (simple cylinder with rounded ends)
     let submarine_entity = commands
@@ -402,46 +411,55 @@ fn setup(
         ));
     });
 
-    // Ocean floor
+    // Ocean floor - larger than water surface and darker to prevent visibility
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(100.0, 100.0))),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(1500.0, 1500.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.8, 0.7, 0.4),
+            base_color: Color::srgb(0.1, 0.1, 0.15),
             ..default()
         })),
-        Transform::from_xyz(0.0, -10.0, 0.0),
+        Transform::from_xyz(0.0, -20.0, 0.0),
         RigidBody::Fixed,
-        Collider::cuboid(50.0, 0.1, 50.0),
+        Collider::cuboid(750.0, 0.1, 750.0),
     ));
 
-    // Water surface with realistic waves - single large surface for smooth waves
+    // Water surface with realistic waves - expanded to eliminate visible edges
     commands.spawn((
         Mesh3d(
             meshes.add(
                 Plane3d::default()
                     .mesh()
-                    .size(100.0, 100.0)
-                    .subdivisions(50),
+                    .size(1200.0, 1200.0)
+                    .subdivisions(120),
             ),
         ),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.1, 0.3, 0.6, 0.4),
+            base_color: Color::srgba(0.05, 0.25, 0.5, 0.85),
             alpha_mode: AlphaMode::Blend,
-            metallic: 0.8,
-            perceptual_roughness: 0.1,
+            metallic: 0.0,
+            perceptual_roughness: 0.02,
+            reflectance: 0.04,
+            ior: 1.33, // Water's index of refraction
+            specular_transmission: 0.95,
+            thickness: 1.0,
             ..default()
         })),
         Transform::from_xyz(0.0, 0.0, 0.0),
         WaterSurface,
     ));
 
-    // Spawn fish
+    // Spawn fish - distributed across much larger area
     for i in 0..FISH_COUNT {
-        let angle = (i as f32) * 2.0 * std::f32::consts::PI / FISH_COUNT as f32;
-        let distance = 10.0 + (i as f32) * 2.0; // Vary distance from 10 to 48
-        let x = angle.cos() * distance;
-        let z = angle.sin() * distance;
-        let y = -5.0 - (i as f32) * 0.5; // Vary depth
+        // Create multiple rings of fish at different distances
+        let ring = (i / 20) as f32; // 4 rings of 20 fish each
+        let angle_in_ring = ((i % 20) as f32) * 2.0 * std::f32::consts::PI / 20.0;
+        let base_distance = 20.0 + ring * 40.0; // Rings at 20, 60, 100, 140 units
+        let distance_variation = (rand::random::<f32>() - 0.5) * 30.0; // Add some randomness
+        let distance = base_distance + distance_variation;
+
+        let x = angle_in_ring.cos() * distance;
+        let z = angle_in_ring.sin() * distance;
+        let y = -3.0 - (rand::random::<f32>() * 15.0); // Vary depth from -3 to -18
 
         commands.spawn((
             Mesh3d(meshes.add(Sphere::new(0.5))),
@@ -455,10 +473,15 @@ fn setup(
             Collider::ball(0.5),
             GravityScale(0.0),
             FishMovement {
-                direction: Vec3::new(0.0, 0.0, 0.0), // No movement for debugging
-                speed: 0.0,
+                direction: Vec3::new(
+                    (rand::random::<f32>() - 0.5) * 2.0,
+                    (rand::random::<f32>() - 0.5) * 0.4,
+                    (rand::random::<f32>() - 0.5) * 2.0,
+                )
+                .normalize(),
+                speed: 1.0 + rand::random::<f32>() * 2.0,
                 change_direction_timer: 0.0,
-                change_direction_interval: 1.0,
+                change_direction_interval: 2.0 + rand::random::<f32>() * 3.0,
             },
         ));
     }
@@ -570,7 +593,7 @@ fn setup(
                     ));
 
                     // Create blip entities for fish detection
-                    for _ in 0..10 {
+                    for _ in 0..20 {
                         sonar_parent.spawn((
                             Node {
                                 width: Val::Px(6.0),
@@ -780,13 +803,19 @@ fn fish_movement(
             fish_movement.direction.y = -fish_movement.direction.y.abs();
         }
 
-        // Keep fish within reasonable bounds (optional)
-        let max_distance = 25.0;
+        // Keep fish within expanded bounds
+        let max_distance = 200.0;
         let distance_from_origin = fish_transform.translation.length();
         if distance_from_origin > max_distance {
             // Move fish back towards origin
             let direction_to_origin = -fish_transform.translation.normalize();
             fish_transform.translation += direction_to_origin * delta_time * 2.0;
+        }
+
+        // Also prevent fish from going too deep
+        if fish_transform.translation.y < -25.0 {
+            fish_transform.translation.y = -25.0;
+            fish_movement.direction.y = fish_movement.direction.y.abs(); // Bounce up
         }
     }
 }
@@ -1108,26 +1137,26 @@ fn wave_system(
             if let Some(positions) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
                 if let VertexAttributeValues::Float32x3(positions) = positions {
                     // Create wave deformation by modifying vertex positions
-                    let wave_height = 0.3;
-                    let wave_speed = 1.5;
-                    let target_wavelength = 0.4; // 1/10 of submarine length
-                    let base_frequency = wave_speed / target_wavelength;
+                    let wave_height = 0.4;
+                    let wave_speed = 1.2;
+                    let time_factor = wave_time.elapsed * wave_speed;
 
                     for position in positions.iter_mut() {
                         let x = position[0];
                         let z = position[2];
 
-                        // Create wave deformation based on position
-                        let time_factor = wave_time.elapsed * base_frequency;
+                        // Multiple overlapping wave patterns for realistic ocean
+                        let wave1 = (x * 0.02 + time_factor).sin() * wave_height * 0.4;
+                        let wave2 = (z * 0.015 - time_factor * 0.7).sin() * wave_height * 0.3;
+                        let wave3 = ((x + z) * 0.01 + time_factor * 1.2).sin() * wave_height * 0.2;
+                        let wave4 = ((x - z) * 0.008 - time_factor * 0.5).sin() * wave_height * 0.1;
 
-                        // Multiple wave patterns for realistic ocean
-                        let wave1 = (x * 8.0 + time_factor).sin() * wave_height * 0.4;
-                        let wave2 = (z * 6.0 - time_factor * 0.7).sin() * wave_height * 0.3;
-                        let wave3 = ((x + z) * 4.0 + time_factor * 1.2).sin() * wave_height * 0.2;
-                        let wave4 = ((x - z) * 3.0 - time_factor * 0.5).sin() * wave_height * 0.1;
+                        // Add some larger scale waves for ocean feel
+                        let large_wave1 = (x * 0.005 + time_factor * 0.3).sin() * wave_height * 0.3;
+                        let large_wave2 = (z * 0.004 - time_factor * 0.2).sin() * wave_height * 0.2;
 
                         // Apply wave deformation to Y position
-                        position[1] = wave1 + wave2 + wave3 + wave4;
+                        position[1] = wave1 + wave2 + wave3 + wave4 + large_wave1 + large_wave2;
                     }
                 }
             }
